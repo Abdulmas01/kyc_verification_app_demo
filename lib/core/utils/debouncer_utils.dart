@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:my_atbu_app/core/utils/logger.dart';
+import 'package:kyc_verification_app_demo/core/utils/logger.dart';
 
 /// A utility class to debounce actions.
 ///

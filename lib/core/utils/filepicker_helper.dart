@@ -1,7 +1,7 @@
 import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:my_atbu_app/api/snackbar_api.dart';
+import 'package:kyc_verification_app_demo/core/utils/toast_utils.dart';
 
 class FilePickerHelper {
   /// Pick a single file with configurable options.
@@ -132,6 +132,6 @@ class FilePickerHelper {
   }
 
   static void _showErrorToast(BuildContext context, {required String message}) {
-    SnackbarApi.showErrorToast(message);
+    ToastUtil.showErrorToast(message);
   }
 }

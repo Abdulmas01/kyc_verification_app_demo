@@ -2,13 +2,10 @@ import 'dart:io';
 
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:kyc_verification_app_demo/api/navigation_api.dart';
-import 'package:kyc_verification_app_demo/core/database/hive/hive.dart';
+import 'package:kyc_verification_app_demo/helpers/navigation_helpers.dart';
 import 'package:kyc_verification_app_demo/core/exception/network_exception.dart';
-import 'package:kyc_verification_app_demo/core/features/auth/data/data_sources/auth_local_data_source.dart';
 import 'package:kyc_verification_app_demo/core/utils/logger.dart';
 import 'package:kyc_verification_app_demo/core/utils/toast_utils.dart';
-import 'package:kyc_verification_app_demo/main.dart';
 import 'package:kyc_verification_app_demo/core/features/auth/presentation/pages/login.dart';
 
 import 'constants.dart';
@@ -53,24 +50,24 @@ class DioClient {
           )
       ..options.connectTimeout = const Duration(milliseconds: 30000);
 
-    dio.interceptors.add(
-      InterceptorsWrapper(
-        onRequest: (options, handler) {
-          final bool isPublic = options.headers['public'] == true;
-          if (!isPublic) {
-            final String token =
-                AuthLocalDataSource(HiveBox()).getSession()?.token ?? "";
-            if (token.isNotEmpty) {
-              options.headers[HttpHeaders.authorizationHeader] =
-                  "Bearer $token";
-            }
-          }
-          logger.i(
-              "Request: ${options.method} ${options.uri} \nHeaders: ${options.headers} \nData: ${options.data}");
-          handler.next(options);
-        },
-      ),
-    );
+    // dio.interceptors.add(
+    //   InterceptorsWrapper(
+    //     onRequest: (options, handler) {
+    //       final bool isPublic = options.headers['public'] == true;
+    //       if (!isPublic) {
+    //         final String token =
+    //             AuthLocalDataSource(HiveBox()).getSession()?.token ?? "";
+    //         if (token.isNotEmpty) {
+    //           options.headers[HttpHeaders.authorizationHeader] =
+    //               "Bearer $token";
+    //         }
+    //       }
+    //       logger.i(
+    //           "Request: ${options.method} ${options.uri} \nHeaders: ${options.headers} \nData: ${options.data}");
+    //       handler.next(options);
+    //     },
+    //   ),
+    // );
   }
 
   Future<Response> post(
@@ -184,9 +181,10 @@ NetworkException _mapDioError(DioException e) {
           message?.toLowerCase() == "invalid/expired token" ||
           message?.toLowerCase() == "invalid token" ||
           message?.toLowerCase() == "invalid signature")) {
-    if (navigationKey.currentState != null) {
-      NavigationApi.pushAndClearStackFromNavigator(
-          route: const Login(), navigator: navigationKey.currentState!);
+    if (NavigationHelpers.navigationKey.currentState != null) {
+      NavigationHelpers.pushAndClearStackFromNavigator(
+        route: const Login(),
+      );
       ToastUtil.showErrorToast("Session expired, please login again.");
     }
     return NetworkException(

@@ -230,19 +230,20 @@ Reject → risk > 0.6
 
 Additional safeguards:
 
-Rate limiting
-
-Example:
-
+**Rate limiting**
 Maximum 5 verification attempts per user per day.
 
-Device fingerprinting
-
+**Device fingerprinting**
 Detect repeated attempts from same device.
 
-IP anomaly detection
-
+**IP anomaly detection**
 Flag high‑risk locations.
+
+**Idempotency Key / Hash Check**
+Prevent replay attacks by tracking hashes of recently submitted payloads to ensure duplicate or intercepted responses cannot be reused.
+
+**Spoof Threshold Penalty**
+Progressively penalize or lock out users/devices that repeatedly hit high spoof probabilities, deterring brute-force presentation attacks.
 
 ---
 
@@ -1398,7 +1399,7 @@ Interpretation:
 
 ---
 
-## 5.3 Decision Thresholds
+## 7.7 Decision Thresholds
 
 The risk score determines the final outcome.
 
@@ -1420,7 +1421,7 @@ Thresholds can be tuned during evaluation experiments.
 
 ---
 
-## 5.4 Rule-Based Overrides
+## 7.8 Rule-Based Overrides
 
 Certain conditions override the numeric score.
 
@@ -1441,7 +1442,7 @@ This hybrid approach (ML signals + rules) is typical in real KYC systems.
 
 ---
 
-## 5.5 Explainability Signals
+## 7.9 Explainability Signals
 
 The system records a structured explanation for each decision.
 
@@ -1477,7 +1478,7 @@ Benefits:
 
 ---
 
-## 5.6 Logging and Audit Records
+## 7.10 Logging and Audit Records
 
 Each verification attempt produces an audit record containing:
 
@@ -1716,6 +1717,7 @@ Mobile App (Flutter)
 - On-device ML inference (TFLite / ONNX)
 - Local pre-processing (crop/warp)
 - Generates verification signals
+- Enforces layered architecture (Data, Domain, Presentation) utilizing Riverpod for scalable state management.
 
 API Gateway
 
@@ -2482,9 +2484,9 @@ This analysis belongs in the thesis conclusion and directly supports a future co
 
 ---
 
-# 11. Expected AI Contributions & Limitations
+# 10. Expected AI Contributions & Limitations
 
-## 11.1 Original AI Research Contributions
+## 10.1 Original AI Research Contributions
 
 This thesis makes the following **original contributions to the AI research literature**:
 
@@ -2514,7 +2516,7 @@ A server-authoritative hybrid architecture is designed, implemented, and formall
 
 ---
 
-## 11.2 Limitations
+## 10.2 Limitations
 
 **Synthetic data ceiling:**
 Models trained on synthetic documents cannot capture holographic
@@ -2573,7 +2575,7 @@ devices after production latency data is collected.
 
 ---
 
-## 11.3 Future Work
+## 10.3 Future Work
 
 Each item below is explicitly designated as out of scope for
 this thesis with a clear reason. Each maps to a specific
@@ -2635,13 +2637,13 @@ Natural follow-on to the domain gap finding in Section 9.0.3.
 
 ---
 
-# 12. Experiment Plan & Evaluation Tables
+# 11. Experiment Plan & Evaluation Tables
 
 This section defines the concrete experiments conducted to demonstrate the system's effectiveness and optimization tradeoffs.
 
 ---
 
-## 12.1 Compression Study Experiments (Core Chapter)
+## 11.1 Compression Study Experiments (Core Chapter)
 
 3 models × 3 configurations = 9 total experiments:
 
@@ -2668,7 +2670,7 @@ Example results table:
 
 ---
 
-## 10.2 Input Resolution Experiments
+## 11.2 Input Resolution Experiments
 
 Model performance will be evaluated under multiple input resolutions.
 
@@ -2686,7 +2688,7 @@ Identify the smallest resolution that maintains acceptable accuracy.
 
 ---
 
-## 10.3 Face Verification Threshold Experiments
+## 11.3 Face Verification Threshold Experiments
 
 Face verification performance depends on similarity threshold selection.
 
@@ -2707,7 +2709,7 @@ The chosen threshold balances security and usability.
 
 ---
 
-## 10.4 Liveness Detection Attack Experiments
+## 11.4 Liveness Detection Attack Experiments
 
 Spoof attacks will be simulated using several scenarios:
 
@@ -2731,7 +2733,7 @@ Example table:
 
 ---
 
-## 10.5 End-to-End Pipeline Experiments
+## 11.5 End-to-End Pipeline Experiments
 
 Full KYC verification sessions will be simulated to measure overall system performance.
 
@@ -2760,7 +2762,7 @@ Example table:
 
 ---
 
-## 10.6 Hardware Benchmarking
+## 11.6 Hardware Benchmarking
 
 Performance will be measured on representative mobile devices.
 
@@ -2779,7 +2781,7 @@ This demonstrates real-world deployment feasibility.
 
 ---
 
-## 10.7 Experiment Reproducibility
+## 11.7 Experiment Reproducibility
 
 To ensure reproducibility:
 

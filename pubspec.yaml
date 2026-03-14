@@ -56,6 +56,8 @@ dependencies:
   material_symbols_icons: ^4.2906.0
   timezone: any
   google_fonts: ^6.3.2
+  auto_size_text: ^3.0.0
+  cached_network_image: ^3.4.1
 
 
 
