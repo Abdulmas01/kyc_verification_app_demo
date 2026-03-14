@@ -60,8 +60,8 @@ kyc-ml/
 │   └── exports/                # final .tflite and .onnx files
 │       ├── doc_quality.tflite
 │       ├── doc_detector.tflite
-│       ├── face_embedder.tflite
-│       └── liveness.tflite
+│       ├── face_embedder.onnx
+│       └── liveness.onnx
 │
 ├── src/
 │   ├── data/
@@ -871,11 +871,12 @@ After Phase 7 you should have these files ready for the Flutter and Backend team
 models/exports/
 ├── doc_quality.tflite          → Flutter (on-device, every camera frame)
 ├── doc_quality.onnx            → Backend (validation / fallback)
-├── face_embedder.tflite        → Flutter (on-device, selfie + doc face)
 ├── face_embedder.onnx          → Backend
-├── liveness.tflite             → Flutter (on-device, selfie burst)
 ├── liveness.onnx               → Backend
 └── decision_engine.pkl         → Backend only (scikit-learn model)
+
+Note: Face embedding and liveness are server-authoritative in this thesis.
+TFLite exports for those models are optional future work.
 ```
 
 ---
@@ -956,16 +957,16 @@ Output: float32[1, 5]              (softmax probabilities)
 Labels: ["GOOD", "BLURRY", "GLARE", "DARK", "NO_DOCUMENT"]
 ```
 
-### face_embedder.tflite
+### face_embedder.onnx (server-authoritative)
 ```
-Input:  float32[1, 112, 112, 3]   (aligned face, normalized -1 to 1)
+Input:  float32[1, 3, 112, 112]   (aligned face, normalized -1 to 1)
 Output: float32[1, 128]            (L2-normalized embedding)
 Usage:  cosine_similarity(emb1, emb2) → float 0–1
 ```
 
-### liveness.tflite
+### liveness.onnx (server-authoritative)
 ```
-Input:  float32[1, 128, 128, 3]   (single best frame, normalized 0–1)
+Input:  float32[1, 3, 128, 128]   (single best frame, normalized 0–1)
 Output: float32[1, 2]              (softmax: [spoof_prob, live_prob])
 Usage:  output[0][1] → liveness_score float 0–1
 ```

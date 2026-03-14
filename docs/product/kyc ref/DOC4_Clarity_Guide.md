@@ -114,35 +114,30 @@ quality is consistently good for 1.5 seconds.
 Optical Character Recognition — reads text from the document image and extracts
 structured fields: name, ID number, date of birth, expiry date.
 
-### Why we are using Google ML Kit instead of training our own model
+### Why we use server-side Tesseract (authoritative)
 Training a good OCR model requires millions of document images with text
 annotations. We don't have this data. Building it from synthetic data alone
 produces a model that fails on real printed fonts, handwriting, and special
 characters.
 
-Google ML Kit Text Recognition v2 is:
-- Free
-- On-device (no data sent to Google)
-- Trained on billions of real documents
-- Accurate on Latin, Arabic, and many other scripts
-- Already used by production KYC systems
+For the thesis, we use **server-side Tesseract + MRZ parsing** as the
+authoritative OCR path because it is open-source, reproducible, and keeps the
+decision pipeline server-authoritative. On-device ML Kit OCR can be used for
+**UX pre-fill only** (fast feedback), but it is not trusted for final decisions.
 
 **This is not cutting a corner — it is the correct engineering decision.**
 Our thesis contribution is not better OCR. Our contribution is the overall
-system, the compression study, and the decision engine. Using ML Kit for OCR
-is the same as using PostgreSQL for the database — you don't build that from
-scratch either.
+system, the compression study, and the decision engine.
 
-### What we do add on top of ML Kit
-Field extraction logic: ML Kit gives you raw text. We parse that text to find
+### What we add on top of OCR
+Field extraction logic: OCR gives you raw text. We parse that text to find
 the name, ID number, and dates using pattern matching rules. We also score how
 confident we are in the extraction — this becomes the `ocr_confidence` signal
 fed to the decision engine.
 
-### When does server-side OCR run?
-Only as a fallback when on-device OCR confidence is below 0.65. The server
-runs Tesseract (open source OCR) on the document image. This handles edge cases
-like unusual fonts or damaged documents.
+### When does OCR run?
+Server OCR runs for all documents as the authoritative source. Optional
+on-device OCR can pre-fill fields for UX, but is always re-validated server-side.
 
 ---
 
@@ -233,13 +228,13 @@ We dropped the temporal branch because:
 - The accuracy gain is marginal on standard benchmarks
 - A single-frame passive CNN on OULU-NPU achieves ACER of 5–12% — publishable
 
-Instead, we add active liveness through the Flutter app:
+Instead, we add active liveness through the Flutter app for UX guidance:
 - Ask the user to blink
 - Ask the user to turn their head left then right
 - Google ML Kit Face Detection detects whether the user complied
 
 This hybrid passive (CNN model) + active (ML Kit challenge) approach is
-simpler to implement and still robust.
+simpler to implement, but only the passive model is authoritative.
 
 ### The dataset
 OULU-NPU is the standard academic benchmark for liveness detection.
@@ -394,7 +389,8 @@ Formula: (substitutions + insertions + deletions) / total characters
 
 Example: "John Smith" read as "Jonn Snith" = 2 wrong out of 10 = CER 0.20
 
-We use this to compare on-device OCR vs. server-side Tesseract fallback.
+We use this to evaluate server-side Tesseract OCR. If optional on-device OCR
+is enabled for UX, we can compare its accuracy to the server results.
 
 ### Field Accuracy
 **Plain language:** What percentage of the key fields were extracted correctly?
@@ -611,12 +607,12 @@ End-to-end, no template rules, generalises to unseen document layouts.
 ### Why we removed it
 - Model size: 200MB+. Cannot run on mobile at all — server only.
 - Training time: 24–48 hours fine-tuning. High risk of Colab timeouts.
-- Adds 2–3 weeks of work for a component that ML Kit already handles well.
-- We would have two server-side OCR systems doing the same job.
+- Adds 2–3 weeks of work for a component that Tesseract already handles well.
+- We would have two OCR systems doing the same job.
 
 ### What we use instead
-Google ML Kit on-device (primary) + Tesseract server fallback.
-This combination covers 95% of use cases with zero training required.
+Server-side Tesseract + MRZ parsing (authoritative), with optional on-device
+ML Kit OCR for UX pre-fill only. This keeps the thesis pipeline reproducible.
 
 ---
 
@@ -689,9 +685,8 @@ resistant to high-quality video replay attacks.
 
 ### What we do instead
 Single-frame passive CNN (MobileNetV2 fine-tuned on OULU-NPU) for the model.
-Active liveness via Flutter app: ML Kit detects blink and head turn challenges.
-This hybrid passive-model + active-challenge approach is documented as your
-liveness architecture — it is simpler but still effective and defensible.
+Active liveness via Flutter app: ML Kit detects blink and head turn challenges
+for UX guidance only (not used in the authoritative decision).
 
 ---
 
@@ -720,10 +715,10 @@ more debugging, and diminishing returns on the research contribution.
 
 | Thesis Component | Startup Value |
 |---|---|
-| Edge-first architecture | Privacy selling point — biometrics never leave phone |
-| On-device quality + liveness | Works offline — key for emerging markets |
-| ML Kit OCR | Zero OCR cost — competitors pay for cloud OCR |
-| Compression study | Proven it runs on mid-range devices — demo-ready |
+| Server-authoritative hybrid | Security and compliance-friendly |
+| On-device quality UX | Faster capture, fewer failed uploads |
+| Server OCR (Tesseract) | Predictable cost, reproducible results |
+| Compression study | Proven low-cost server inference |
 | Decision engine calibration | Tunable thresholds for different client risk tolerances |
 | Django admin | Manual review console — ready from day one |
 | API key auth | Billing gate — per-verification pricing built in |
@@ -732,9 +727,9 @@ more debugging, and diminishing returns on the research contribution.
 ## The cost per verification argument
 Your startup's pricing pitch:
 - Jumio/Onfido charge $1–5 per verification
-- Your system runs face + liveness on the user's device (free compute)
-- Server costs: OCR fallback (rare) + decision engine (trivial) + storage
-- Estimated server cost per verification: $0.01–0.05
+- Your system runs capture guidance on-device; inference runs on server
+- Server costs: OCR + face + liveness + decision engine + storage
+- Estimated server cost per verification: $0.04–0.10
 - You can charge $0.20–0.50 and still massively undercut the market
 
 This calculation belongs in your thesis conclusion AND your startup pitch deck.
@@ -767,7 +762,7 @@ This calculation belongs in your thesis conclusion AND your startup pitch deck.
 | Model | Why This Architecture |
 |---|---|
 | MobileNetV3-Small (quality) | Fastest MobileNet variant — must run at 30fps |
-| ML Kit OCR | Best accuracy, free, no training needed |
+| Tesseract + MRZ (server) | Reproducible OCR, consistent with server-authoritative decisions |
 | MobileFaceNet pretrained | Best face embedder in the mobile size range |
 | MobileNetV2 (liveness) | Good accuracy, stable training, well-documented |
 | Logistic Regression (decision) | Interpretable, calibrated, fast, provably better than fixed weights |
@@ -777,7 +772,7 @@ This calculation belongs in your thesis conclusion AND your startup pitch deck.
 
 | Document | Contents |
 |---|---|
-| DOC1 — AI Training | How to train all models, all Python code, export to TFLite |
+| DOC1 — AI Training | How to train all models, export to ONNX (server) + TFLite (quality only) |
 | DOC2 — Backend | Django project, all API endpoints, ML model loading pattern |
 | DOC3 — Flutter | Full app screens, TFLite inference in Dart, API calls |
 | DOC4 — This doc | Why everything was decided, all metrics explained |

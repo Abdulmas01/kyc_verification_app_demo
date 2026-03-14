@@ -26,13 +26,13 @@ This thesis makes the following original AI contributions:
 
 3. **Compression study: PTQ and knowledge distillation across biometric tasks** — a systematic empirical comparison of post-training INT8 quantization and knowledge distillation applied to each biometric model, producing concrete accuracy–latency–size tradeoff curves. Different biometric tasks exhibit fundamentally different sensitivity to quantization — this per-task analysis is the core empirical contribution.
 
-4. **Passive liveness detection with active challenge-response fusion** — a MobileNetV2 classifier trained on OULU-NPU for texture-based anti-spoofing (print, screen, and video replay attacks), fused with active challenge-response (blink detection and head-turn tracking) via Google ML Kit Face Detection.
+4. **Passive liveness detection with optional active challenge UX** — a MobileNetV2 classifier trained on OULU-NPU for texture-based anti-spoofing (print, screen, and video replay attacks), with ML Kit challenge-response used for capture guidance only (not part of the authoritative decision).
 
 5. **Calibrated probabilistic decision engine** — a systematic comparison of a hand-engineered weighted scoring formula (baseline) against learned calibration models (logistic regression and XGBoost with isotonic calibration), evaluated using calibration-specific metrics (ECE, Brier score) that are standard in probabilistic ML but rarely applied to KYC decision engine literature.
 
 ### OCR Strategy
 
-On-device OCR uses **Google ML Kit Text Recognition v2** — a free, production-grade, on-device library supporting Latin and Arabic scripts, requiring no training data. Server-side Tesseract OCR serves as fallback when on-device confidence falls below 0.65. The thesis contribution in this module is the field extraction logic, confidence scoring pipeline, and field validation rules built on top of ML Kit — not a custom OCR model. This mirrors the practice of production KYC systems and allows the research focus to remain on the novel biometric components.
+For the thesis prototype, **server-side OCR is authoritative** and uses Tesseract + MRZ-first parsing. On-device ML Kit OCR may be used for **UX pre-fill only** (faster feedback to the user), but is **not** trusted for the final decision. If the on-device OCR result is used, it is treated as a hint and always re-validated server-side. The thesis contribution here is the field extraction logic, confidence scoring, and validation rules — not a custom OCR model. This keeps the architecture reproducible and consistent with the server-authoritative security model.
 
 ---
 
@@ -49,9 +49,8 @@ This specification is organized around the AI research work:
 - **Section 7** — Decision Engine & Risk Calibration (fusion model)
 - **Section 8** — Evaluation & Benchmark Design
 - **Section 9** — System Architecture & Data Flow
-- **Section 10** — Critical Gaps & Alternative AI Approaches
-- **Section 11** — Expected AI Contributions & Limitations
-- **Section 12** — Experiment Plan & Tables
+- **Section 10** — Expected AI Contributions & Limitations
+- **Section 11** — Experiment Plan & Tables
 
 ---
 
@@ -130,8 +129,8 @@ Attackers may attempt:
   logic impossibilities (issue after expiry) flagged
   automatically.
 
-• OCR confidence scoring — ML Kit per-block confidence
-  aggregated into a single `field_valid_score` signal
+• OCR confidence scoring — per-block confidence from the
+  OCR engine aggregated into a single `field_valid_score` signal
   that feeds the decision engine. Consistently low
   confidence across a document flags it for manual review.
 
@@ -214,7 +213,8 @@ Inputs:
 
 Example scoring:
 
-Risk Score = weighted combination of signals
+Risk Score = 1 − P(genuine), computed from a weighted
+combination of signals
 
 Decision thresholds:
 
@@ -438,15 +438,14 @@ the final decision.
 | Document quality scoring | TFLite (doc_quality model) | Real-time camera guidance — "Hold steady", "Move to better light" |
 | Document boundary detection | ML Kit Object Detection | Frame the document correctly |
 | Face detection | ML Kit Face Detection | Ensure face is present before capture |
-| Active liveness challenges | ML Kit Face Detection | Blink + head-turn challenge-response |
+| Active liveness challenges | ML Kit Face Detection | UX guidance only — not used in final decision |
 | Image encryption | AES-256-GCM | Secure image before upload |
 | Payload signing | ECDSA (Android Keystore TEE) | Attest payload integrity |
 | Play Integrity attestation | Google Play Integrity API | Attest device and app authenticity |
 
-**Key principle:** The document quality score from the mobile device is used
-only for camera UX feedback. It is not sent to the server and does not feed
-the decision engine. The server computes its own authoritative quality
-assessment from the uploaded image.
+**Key principle:** Client-side scores are **UX-only**. They are not trusted
+and do not feed the final decision. The server recomputes all authoritative
+scores from the uploaded images.
 
 ### Server — All authoritative inference
 
@@ -457,7 +456,7 @@ final decision.
 | Task | Technology | Input | Output |
 |---|---|---|---|
 | Document quality (authoritative) | ONNX Runtime — quality model | Document image | quality_score |
-| OCR + field extraction | ML Kit (primary) / Tesseract (fallback) | Document image | extracted_fields, ocr_confidence |
+| OCR + field extraction | Tesseract + MRZ parser (authoritative) | Document image | extracted_fields, ocr_confidence |
 | Face embedding extraction | ONNX Runtime — face model | Selfie frame | 128-dim embedding |
 | Face similarity | Cosine similarity | Doc face + selfie embedding | face_similarity |
 | Passive liveness scoring | ONNX Runtime — liveness model | Selfie frame | liveness_score |
@@ -502,7 +501,7 @@ App calls POST /api/v1/verify/start/
    → "Turn left" — detects head euler Y rotation
    → "Turn right" — detects head euler Y rotation
 3. All three challenges completed → auto-capture selfie frame
-4. Challenge result (boolean) + ML Kit confidence scores recorded
+4. Challenge result recorded for UX feedback only (not used in decision)
 5. Selfie frame encrypted with AES-256-GCM
 ```
 
@@ -515,12 +514,6 @@ App calls POST /api/v1/verify/upload/
     session_token: "sess_abc...",
     document_image: <AES-256-GCM encrypted, base64>,
     selfie_image:   <AES-256-GCM encrypted, base64>,
-    challenge_result: {
-      blink_completed: true,
-      head_left_completed: true,
-      head_right_completed: true,
-      mlkit_face_confidence: 0.97
-    },
     integrity_token: <Play Integrity token>,
     payload_signature: <ECDSA signature of payload hash>,
     app_version: "1.0.0",
@@ -541,21 +534,19 @@ Server immediately:
 Runs asynchronously — typically 1.5–3 seconds total:
 
 1. Document quality (ONNX) → quality_score
-2. ML Kit OCR → extracted_fields, ocr_confidence
-   If ocr_confidence < 0.65 → Tesseract fallback
+2. Tesseract OCR + MRZ parsing → extracted_fields, ocr_confidence
 3. Field validation → field_valid_score
 4. Face detection on document image → document_face_crop
 5. Face detection on selfie → selfie_face_crop
 6. Face embedding (ONNX) on both crops → embed_doc, embed_selfie
 7. Cosine similarity(embed_doc, embed_selfie) → face_similarity
 8. Passive liveness (ONNX) on selfie → liveness_score
-9. Fuse: liveness_score × challenge_weight → combined_liveness
-10. Decision engine:
-    Input: [face_similarity, combined_liveness, ocr_confidence,
+9. Decision engine:
+    Input: [face_similarity, liveness_score, ocr_confidence,
             quality_score, field_valid_score]
     Output: P(genuine) → ACCEPT / MANUAL_REVIEW / REJECT
-11. Write immutable audit record
-12. POST result to business webhook
+10. Write immutable audit record
+11. POST result to business webhook
 ```
 
 ### Phase 6 — Result Delivery
@@ -759,26 +750,22 @@ Target fields:
 - Expiry date
 - Nationality (where present)
 
-### Primary Approach — Google ML Kit Text Recognition v2 (On-Device)
+### Primary Approach — Server-Side Tesseract OCR + MRZ Parsing
 
-The OCR component uses **Google ML Kit Text Recognition v2** as the primary on-device text recognition engine.
+The OCR component uses **server-side Tesseract** with **MRZ-first parsing** as the authoritative text recognition engine.
 
 Justification:
-- Trained by Google on billions of real-world document images — far exceeds what any synthetic training dataset can provide
-- On-device inference with no data transmission — aligns with the privacy-first architecture principle
-- Supports Latin, Arabic, Chinese, Devanagari, Japanese, and Korean scripts
-- Free with no per-call cost — direct startup cost advantage over cloud OCR APIs
-- Already the standard choice in production mobile KYC systems
+- Fully reproducible in a thesis environment (no proprietary dependency)
+- Keeps the decision pipeline server-authoritative
+- Open-source and cost-controlled
+- Works well with MRZ-based extraction, which is highly structured
+
+On-device ML Kit OCR can be used for **UX pre-fill only** (faster feedback to the user), but is **not** trusted for final decisions. If used, its output is always re-validated server-side.
 
 The thesis contribution in this module is **not** a custom OCR model. It is:
-1. The field extraction pipeline that parses ML Kit raw text output into structured fields (name, ID number, DOB, expiry)
+1. The field extraction pipeline that parses OCR output into structured fields (name, ID number, DOB, expiry)
 2. The confidence scoring system that estimates extraction reliability
 3. The field validation rules that verify extracted values against known patterns (ID number formats, date ranges, name structure)
-4. The fallback routing decision: when on-device confidence < 0.65, route to server-side Tesseract
-
-### Fallback — Server-Side Tesseract OCR
-
-When on-device ML Kit confidence falls below 0.65 (low lighting, damaged document, unusual font), the normalized document image is sent to the server where Tesseract OCR processes it.
 
 Tesseract is used rather than a cloud OCR API (Google Vision, AWS Textract) to:
 - Maintain cost control (Tesseract is open source)
@@ -797,7 +784,7 @@ OCR performance is measured on held-out synthetic documents with ground truth la
 | Field accuracy — DOB | % of dates of birth correctly extracted |
 | Confidence calibration | Correlation between confidence score and actual accuracy |
 
-Comparison: on-device ML Kit vs. server Tesseract fallback on the same test set.
+Optional comparison (if ML Kit UX mode is enabled): on-device ML Kit vs. server Tesseract on the same test set.
 
 ---
 
@@ -889,21 +876,21 @@ This model detects texture-level spoofing cues:
 
 Output: `liveness_score` — probability of LIVE class (0 to 1)
 
-**Component 2 — Active Challenge-Response (Google ML Kit, no training required)**
+**Component 2 — Active Challenge-Response (Google ML Kit, UX-only)**
 
 Using **Google ML Kit Face Detection** with classification enabled, the Flutter app issues liveness challenges:
 - Blink detection: `leftEyeOpenProbability` and `rightEyeOpenProbability` < 0.2 triggers blink confirmed
 - Head turn left: `headEulerAngleY` < -20 degrees
 - Head turn right: `headEulerAngleY` > +20 degrees
 
-Challenge success is recorded as `challenge_success` boolean — a hard signal fed directly to the decision engine. A failed challenge triggers hard rejection regardless of the passive CNN score.
+Challenge success is recorded as `challenge_success` for UX feedback and capture quality only. It is **not** used in the authoritative decision in the thesis prototype.
 
 **Why this design over a temporal two-branch hybrid:**
 A (2+1)D temporal CNN branch (factorised spatial + temporal convolutions over video sequences) was evaluated during the design phase. It was not adopted because:
 - Implementation complexity is significantly higher than the accuracy gain justifies
 - Training on video sequences requires substantially more GPU time and complex data loading
 - Accuracy improvement on OULU-NPU is marginal (3–8% ACER) relative to the passive CNN baseline
-- Active challenge-response via ML Kit provides equivalent temporal discrimination without a second model
+- Active challenge-response via ML Kit improves capture quality without a second model, while keeping the decision path server-authoritative
 
 ### Loss Function
 
@@ -961,9 +948,9 @@ Expected result on OULU-NPU Protocol 1: ACER 5–12% with MobileNetV2 fine-tunin
 |--------|-------------|-----------|-------|--------|-------------|
 | Doc Quality | MobileNetV3-Small | Multi-class classification | 224×224 | 5-class label | < 5MB |
 | Doc Detector | MobileNetV2 + FPN | Corner regression | 320×320 | 8 coordinates | < 8MB |
-| OCR | ML Kit (on-device) + Tesseract (server fallback) | Text recognition | Normalized doc | Structured fields | No custom model |
+| OCR | Tesseract (server) + optional ML Kit (UX) | Text recognition | Normalized doc | Structured fields | No custom model |
 | Face Embedding | MobileFaceNet (pretrained VGGFace2) | Metric learning | 112×112 | 128-dim vector | < 2MB |
-| Liveness | MobileNetV2 passive CNN + ML Kit active | Binary classification | 128×128 | Probability | < 10MB |
+| Liveness | MobileNetV2 passive CNN + optional ML Kit (UX) | Binary classification | 128×128 | Probability | < 10MB |
 
 ---
 
@@ -1054,7 +1041,7 @@ Frame-level augmentation applied to OULU-NPU frames:
 |--------|--------------|---------------|
 | Doc Quality | Cross-Entropy + Label Smoothing (ε=0.1) | Standard multi-class, smoothing reduces overconfidence |
 | Doc Detector | Smooth L1 (Huber) | Robust to corner localization outliers |
-| OCR | ML Kit / Tesseract — no training loss | No custom OCR model |
+| OCR | Tesseract (server) — no training loss | No custom OCR model |
 | Face Embedding | ArcFace (Angular Margin, m=0.5, s=64) | Maximizes inter-class angular separation for open-set verification |
 | Liveness | Weighted Binary Cross-Entropy | Handles class imbalance between genuine and spoof samples |
 | Decision Engine | Log Loss (Logistic Regression) / XGBoost objective | Probabilistic calibration of multi-signal fusion |
@@ -1366,7 +1353,7 @@ OCR signals: `ocr_confidence`, `field_validation_score`
 
 Face verification signals: `face_similarity`, `face_quality_score`
 
-Liveness signals: `liveness_score`, `challenge_success`
+Liveness signals: `liveness_score` (challenge_success is UX-only)
 
 Optional device signals: `attempt_count`, `device_fingerprint_risk`, `ip_risk`
 
@@ -1704,8 +1691,8 @@ This section defines the end-to-end architecture for the KYC system and clarifie
 
 Primary design principle:
 
-- **Edge-first** for privacy + UX
-- **Server fallback** for heavy processing (especially OCR) and governance (audit/manual review)
+- **Server-authoritative** for decision signals
+- **On-device UX** for capture guidance and pre-screening
 
 ---
 
@@ -1714,9 +1701,9 @@ Primary design principle:
 Mobile App (Flutter)
 
 - Camera capture + UX
-- On-device ML inference (TFLite / ONNX)
+- On-device quality model (TFLite) for pre-screening
 - Local pre-processing (crop/warp)
-- Generates verification signals
+- Does not generate authoritative verification signals
 - Enforces layered architecture (Data, Domain, Presentation) utilizing Riverpod for scalable state management.
 
 API Gateway
@@ -1727,7 +1714,7 @@ API Gateway
 
 KYC Processing Service
 
-- OCR service (optional/fallback)
+- OCR service (authoritative)
 - Decision engine
 - Logging + audit
 - Manual review routing
@@ -1773,19 +1760,12 @@ Output:
 
 ---
 
-### Step 3 — OCR (two-mode)
-
-**Mode A: On-device OCR**
-
-- OCR runs locally
-- Extracts fields + confidence
-
-**Mode B: Server OCR fallback**
+### Step 3 — OCR (server-authoritative)
 
 - Mobile uploads normalized_doc_image
-- Server returns extracted fields + confidence
+- Server runs Tesseract + MRZ parsing
 
-Output:
+Output (server):
 
 - extracted_fields
 - ocr_confidence
@@ -1793,45 +1773,32 @@ Output:
 
 ---
 
-### Step 4 — Selfie capture + face verification (mobile)
+### Step 4 — Face verification (server-authoritative)
 
-- Capture selfie burst
-- Select best frame
-- Extract face embedding
-- Extract face from document image
-- Compute similarity
+- Server detects faces in document + selfie
+- Server runs face embedding model
+- Server computes similarity
 
-Output:
+Output (server):
 
 - face_similarity
-- face_quality_score
+- doc_face_quality_score
 
 ---
 
-### Step 5 — Liveness detection (mobile)
+### Step 5 — Liveness detection (server-authoritative)
 
-- Passive + active checks
+- Server runs passive liveness on selfie
 
-Output:
+Output (server):
 
 - liveness_score
-- challenge_success
 
 ---
 
-### Step 6 — Decision request (mobile → server)
+### Step 6 — Decision (server)
 
-Mobile sends **signals only** (privacy-first):
-
-- doc_quality_score
-- ocr_confidence
-- field_validation_score
-- face_similarity
-- liveness_score
-- reason_codes (if any)
-- model_version + app_version
-
-Server computes (or verifies) final decision and stores audit record.
+Server fuses authoritative scores and stores the audit record.
 
 ---
 
@@ -1839,14 +1806,9 @@ Server computes (or verifies) final decision and stores audit record.
 
 Default transmission policy:
 
-- Transmit **scores + extracted fields** (masked where possible)
+- Transmit encrypted **document image** + **selfie image**
 - Do not transmit selfie video
 - Do not transmit raw camera stream
-
-If server OCR fallback is used:
-
-- Transmit only normalized document image
-- Never transmit full raw frame sequence
 
 ---
 
@@ -1919,7 +1881,7 @@ Server-side failures:
 Resilience strategy:
 
 - On-device retries for capture
-- Server OCR fallback if on-device OCR fails
+- Server OCR is authoritative (no dependency on on-device OCR)
 - Manual review path when uncertain
 
 ---
@@ -2019,7 +1981,7 @@ Tasks:
 Deliverables:
 
 - Working mobile KYC prototype
-- On-device inference pipeline
+- On-device UX inference (doc quality + capture guidance)
 
 ---
 
@@ -2032,7 +1994,7 @@ Implement backend services required for verification and logging.
 Tasks:
 
 - API gateway
-- OCR fallback service
+- Server OCR service (authoritative)
 - Decision engine service
 - Verification record storage
 
@@ -2233,7 +2195,7 @@ with fabricated values before transmission:
 
 ```
 1. Attacker roots device or installs interception certificate
-2. Intercepts POST /api/v1/verify/submit/ before it leaves the device
+2. Intercepts the client-score POST (e.g., /api/v1/verify/submit/) before it leaves the device
 3. Replaces { face_similarity: 0.31, liveness_score: 0.18 }
         with { face_similarity: 0.97, liveness_score: 0.95 }
 4. Forwards modified payload — server receives fabricated scores
@@ -2426,7 +2388,7 @@ most promising technical direction for the next model version.
 
 ---
 
-## 9.0.6 Design Decision — OCR Strategy: ML Kit over Custom Transformer Models
+## 9.0.6 Design Decision — OCR Strategy: Tesseract + Optional ML Kit (UX)
 
 ### Why TrOCR and Donut Were Evaluated and Not Adopted
 
@@ -2439,9 +2401,9 @@ Both were ultimately not adopted for the following reasons:
 
 TrOCR at ~334MB is too large for on-device inference and requires server-side deployment, creating an additional service dependency. Donut at ~200MB has similar constraints plus 24–48 hours of fine-tuning time with high risk of training instability on the synthetic dataset.
 
-Most critically: both approaches require the synthetic document dataset to produce the training quality needed — and a model trained purely on synthetic documents will underperform Google ML Kit which has been trained on billions of real documents.
+Most critically: both approaches require the synthetic document dataset to produce the training quality needed, and training a transformer OCR model within the thesis timeline is high risk.
 
-**Adopted approach:** Google ML Kit Text Recognition v2 on-device (primary) + Tesseract server fallback. This combination provides production-grade OCR accuracy with zero training cost, zero model size overhead, and on-device privacy. The thesis contribution is the field extraction, confidence scoring, and validation pipeline built on top — not the OCR engine itself.
+**Adopted approach:** Server-side Tesseract + MRZ parsing (authoritative), with optional on-device ML Kit OCR for UX pre-fill only. This provides reproducible results, zero OCR training cost, and a clean server-authoritative decision path. The thesis contribution is the field extraction, confidence scoring, and validation pipeline built on top — not the OCR engine itself.
 
 This decision mirrors the practice of commercial KYC systems (Jumio, Sumsub) and is explicitly documented in the thesis as an engineering decision with full justification.
 
@@ -2475,7 +2437,7 @@ If this system is intended to evolve into a commercial product (KYC-as-a-Service
 Competitors charge $1–$5 per verification (Jumio, Onfido, Sumsub, Veriff). A cost analysis should estimate:
 
 - Cloud compute cost per verification (server OCR, decision engine)
-- Mobile inference cost is effectively zero (runs on user's device)
+- Mobile pre-screening cost is negligible; server inference dominates compute cost
 - Storage cost per verification record
 
 Target: demonstrate cost-per-verification under $0.50 to establish a viable price margin against incumbents.
@@ -2496,11 +2458,11 @@ Existing compression studies apply quantization and distillation to image classi
 
 **Why this is novel:** Face embedding quality is highly sensitive to INT8 precision loss because angular margin distances are small. Document quality classification is largely robust. This per-task sensitivity analysis has not been systematically published for a complete mobile KYC pipeline.
 
-### Contribution 2 — Passive Liveness CNN with Active Challenge-Response Fusion
+### Contribution 2 — Passive Liveness CNN (with optional Active Challenge UX)
 
-The liveness system combines a MobileNetV2 binary classifier trained on OULU-NPU for passive texture-based anti-spoofing with active challenge-response (blink, head-turn) via Google ML Kit Face Detection. Both components are benchmarked against spoof attack categories with APCER/BPCER reported for passive-only and passive+active configurations.
+The liveness system uses a MobileNetV2 binary classifier trained on OULU-NPU for passive texture-based anti-spoofing. Active challenge-response (blink, head-turn) via ML Kit is used for **UX gating** and capture quality, but is **not** part of the authoritative decision in the thesis prototype.
 
-**Why this is novel:** Most published mobile liveness papers evaluate passive OR active signals in isolation. The explicit combination and independent benchmarking of both components is the contribution.
+**Why this is novel:** The thesis provides a clear, reproducible passive liveness benchmark on mobile-optimized models and documents the tradeoffs of keeping active challenges out of the authoritative decision path for simplicity and reproducibility.
 
 ### Contribution 3 — Calibrated Probabilistic Decision Engine vs. Engineered Weights
 
@@ -2795,4 +2757,3 @@ Experiment scripts will be version-controlled to allow replication.
 ---
 
 **This completes the full system design, implementation plan, and evaluation framework for the Master's Project.**
-

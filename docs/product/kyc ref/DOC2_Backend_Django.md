@@ -14,7 +14,7 @@
 | Framework | Django 5.0 + DRF | You know it, admin panel is free |
 | Database | PostgreSQL 16 | Production-grade, JSONB for audit logs |
 | ML Inference | ONNX Runtime + scikit-learn | Load trained models directly |
-| OCR | Google ML Kit (mobile) + fallback Tesseract | On-device first, server fallback |
+| OCR | Tesseract + MRZ (server-authoritative) | Reproducible, consistent with server-side decisions |
 | Auth | DRF SimpleJWT | Stateless, mobile-friendly |
 | Storage | Local / S3 (optional) | Encrypted doc images for manual review only |
 | Task Queue | Celery + Redis | Async manual review notifications |
@@ -478,8 +478,7 @@ def _compute_reason_codes(signals, decision):
 
 ```
 POST   /api/v1/verify/start/           → Start verification session
-POST   /api/v1/verify/ocr/             → OCR fallback (server-side)
-POST   /api/v1/verify/submit/          → Submit all scores → get decision
+POST   /api/v1/verify/upload/          → Upload images (server-authoritative)
 GET    /api/v1/verify/{session_id}/    → Get session result
 GET    /api/v1/verify/history/         → List sessions for this API key
 
@@ -509,35 +508,11 @@ class StartSessionSerializer(serializers.Serializer):
     device_os     = serializers.ChoiceField(choices=["android", "ios"])
     model_version = serializers.CharField(max_length=50, default="v1.0.0")
 
-class OCRFallbackSerializer(serializers.Serializer):
+class UploadVerificationSerializer(serializers.Serializer):
     session_token = serializers.CharField(max_length=64)
     document_image = serializers.ImageField()   # normalized document image
-
-class SubmitVerificationSerializer(serializers.Serializer):
-    """
-    The main payload from the mobile app.
-    All scores are from on-device ML models.
-    """
-    session_token       = serializers.CharField(max_length=64)
-
-    # Signal scores from mobile models
-    face_similarity     = serializers.FloatField(min_value=0, max_value=1)
-    liveness_score      = serializers.FloatField(min_value=0, max_value=1)
-    ocr_confidence      = serializers.FloatField(min_value=0, max_value=1)
-    doc_quality_score   = serializers.FloatField(min_value=0, max_value=1)
-    field_valid_score   = serializers.FloatField(min_value=0, max_value=1)
-    doc_boundary_conf   = serializers.FloatField(min_value=0, max_value=1, required=False)
-    face_quality_score  = serializers.FloatField(min_value=0, max_value=1, required=False)
-    challenge_success   = serializers.BooleanField(required=False)
-
-    # Extracted fields from OCR (for validation)
-    extracted_name      = serializers.CharField(max_length=200, required=False)
-    extracted_id_number = serializers.CharField(max_length=100, required=False)
-    extracted_dob       = serializers.DateField(required=False)
-    extracted_expiry    = serializers.DateField(required=False)
-
-    # Metadata
-    model_version       = serializers.CharField(max_length=50, default="v1.0.0")
+    selfie_image   = serializers.ImageField()   # selfie image
+    model_version  = serializers.CharField(max_length=50, default="v1.0.0")
     app_version         = serializers.CharField(max_length=20, required=False)
     attempt_number      = serializers.IntegerField(min_value=1, max_value=5, default=1)
 
@@ -577,8 +552,7 @@ import secrets, logging
 from .models import VerificationSession
 from .serializers import (
     StartSessionSerializer,
-    OCRFallbackSerializer,
-    SubmitVerificationSerializer,
+    UploadVerificationSerializer,
     VerificationResultSerializer,
 )
 from .services.ocr_service import run_ocr_on_document
@@ -614,59 +588,14 @@ class StartSessionView(APIView):
         }, status=status.HTTP_201_CREATED)
 
 
-class OCRFallbackView(APIView):
+class UploadVerificationView(APIView):
     """
-    Step 2 (optional): If on-device OCR fails or confidence is low,
-    mobile uploads the normalized document image here.
-    Server runs Tesseract and returns extracted fields.
-    """
-
-    def post(self, request):
-        serializer = OCRFallbackSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-
-        session_token = serializer.validated_data["session_token"]
-        doc_image = serializer.validated_data["document_image"]
-
-        try:
-            session = VerificationSession.objects.get(session_token=session_token)
-        except VerificationSession.DoesNotExist:
-            return Response({"error": "Invalid session token"}, status=404)
-
-        # Run server-side OCR
-        ocr_result = run_ocr_on_document(doc_image)
-
-        # Update session with OCR results
-        session.extracted_name      = ocr_result.get("name", "")
-        session.extracted_id_number = ocr_result.get("id_number", "")
-        session.extracted_dob       = ocr_result.get("dob")
-        session.extracted_expiry    = ocr_result.get("expiry")
-        session.ocr_confidence      = ocr_result.get("confidence", 0.0)
-        session.save(update_fields=[
-            "extracted_name", "extracted_id_number",
-            "extracted_dob", "extracted_expiry", "ocr_confidence"
-        ])
-
-        return Response({
-            "extracted_fields": {
-                "name":       session.extracted_name,
-                "id_number":  session.extracted_id_number,
-                "dob":        str(session.extracted_dob) if session.extracted_dob else None,
-                "expiry":     str(session.extracted_expiry) if session.extracted_expiry else None,
-            },
-            "ocr_confidence": session.ocr_confidence,
-        })
-
-
-class SubmitVerificationView(APIView):
-    """
-    Step 3: Mobile sends all biometric scores.
-    Server runs decision engine and returns final result.
-    This is the main endpoint.
+    Step 2: Mobile uploads document + selfie images.
+    Server runs OCR + biometric inference and computes the decision.
     """
 
     def post(self, request):
-        serializer = SubmitVerificationSerializer(data=request.data)
+        serializer = UploadVerificationSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
 
@@ -678,35 +607,23 @@ class SubmitVerificationView(APIView):
         except VerificationSession.DoesNotExist:
             return Response({"error": "Invalid or expired session"}, status=404)
 
-        # Check attempt limit (abuse prevention)
-        if data.get("attempt_number", 1) > 5:
-            return Response({"error": "Maximum attempts exceeded"}, status=429)
+        doc_image = data["document_image"]
+        selfie_image = data["selfie_image"]
 
-        # Save all scores to session
-        session.face_similarity    = data["face_similarity"]
-        session.liveness_score     = data["liveness_score"]
-        session.ocr_confidence     = data["ocr_confidence"]
-        session.doc_quality_score  = data["doc_quality_score"]
-        session.field_valid_score  = data["field_valid_score"]
-        session.doc_boundary_conf  = data.get("doc_boundary_conf")
-        session.face_quality_score = data.get("face_quality_score")
-        session.challenge_success  = data.get("challenge_success")
-        session.extracted_name     = data.get("extracted_name", "")
-        session.extracted_id_number = data.get("extracted_id_number", "")
-        session.extracted_dob      = data.get("extracted_dob")
-        session.extracted_expiry   = data.get("extracted_expiry")
-        session.attempt_number     = data.get("attempt_number", 1)
+        # Run server-side OCR
+        ocr_result = run_ocr_on_document(doc_image)
 
-        # Hard reject overrides
-        if "_hard_reject" in data:
-            session.decision     = VerificationSession.Decision.REJECT
-            session.reason_codes = [data["_hard_reject"]]
-            session.risk_score   = 1.0
-            session.completed_at = timezone.now()
-            session.save()
-            return Response(self._format_response(session))
+        # TODO: run face detection + embedding + liveness on server
+        # face_similarity, liveness_score, doc_quality_score, field_valid_score = ...
 
-        # Run decision engine
+        # Store OCR fields (example)
+        session.extracted_name      = ocr_result.get("name", "")
+        session.extracted_id_number = ocr_result.get("id_number", "")
+        session.extracted_dob       = ocr_result.get("dob")
+        session.extracted_expiry    = ocr_result.get("expiry")
+        session.ocr_confidence      = ocr_result.get("confidence", 0.0)
+
+        # Decision engine (uses server-computed signals)
         decision_result = make_decision(session)
         session.risk_score   = decision_result["risk_score"]
         session.decision     = decision_result["decision"]
@@ -714,24 +631,16 @@ class SubmitVerificationView(APIView):
         session.completed_at = timezone.now()
         session.save()
 
-        # Increment API key usage counter
         if request.auth:
             request.auth.verifications_used += 1
             request.auth.save(update_fields=["verifications_used"])
 
-        # Log to audit trail
         log_verification(session)
 
-        return Response(self._format_response(session))
-
-    def _format_response(self, session):
-        return {
-            "session_id":   str(session.id),
-            "decision":     session.decision,
-            "risk_score":   session.risk_score,
-            "reason_codes": session.reason_codes,
-            "timestamp":    session.completed_at.isoformat() if session.completed_at else None,
-        }
+        return Response({
+            "session_id": str(session.id),
+            "estimated_wait_ms": 1500
+        }, status=status.HTTP_202_ACCEPTED)
 
 
 class SessionResultView(APIView):
@@ -851,8 +760,7 @@ import io
 
 def run_ocr_on_document(image_file) -> dict:
     """
-    Server-side OCR fallback using Tesseract.
-    Called only when on-device ML Kit OCR confidence is low.
+    Server-side OCR using Tesseract (authoritative).
     Returns extracted fields and overall confidence.
     """
     img = Image.open(image_file)
@@ -1098,8 +1006,7 @@ from . import views
 
 urlpatterns = [
     path("verify/start/",           views.StartSessionView.as_view()),
-    path("verify/ocr/",             views.OCRFallbackView.as_view()),
-    path("verify/submit/",          views.SubmitVerificationView.as_view()),
+    path("verify/upload/",          views.UploadVerificationView.as_view()),
     path("verify/<uuid:session_id>/", views.SessionResultView.as_view()),
     path("verify/history/",         views.VerificationHistoryView.as_view()),
     path("admin/review-queue/",     views.ReviewQueueView.as_view()),
@@ -1213,6 +1120,13 @@ curl -X POST http://localhost:8000/api/v1/verify/start/ \
   -H "Authorization: ApiKey kyc_yourkey" \
   -H "Content-Type: application/json" \
   -d '{"app_version": "1.0.0", "device_os": "android", "model_version": "v1.0.0"}'
+
+# Upload images (server-authoritative inference)
+curl -X POST http://localhost:8000/api/v1/verify/upload/ \
+  -H "Authorization: ApiKey kyc_yourkey" \
+  -F "session_token=abc123xyz..." \
+  -F "document_image=@/path/to/document.jpg" \
+  -F "selfie_image=@/path/to/selfie.jpg"
 ```
 
 ---
@@ -1227,7 +1141,15 @@ curl -X POST http://localhost:8000/api/v1/verify/start/ \
 }
 ```
 
-### POST /api/v1/verify/submit/
+### POST /api/v1/verify/upload/
+```json
+{
+  "session_id": "uuid-here",
+  "estimated_wait_ms": 1500
+}
+```
+
+### GET /api/v1/verify/{session_id}/
 ```json
 {
   "session_id": "uuid-here",
@@ -1235,19 +1157,6 @@ curl -X POST http://localhost:8000/api/v1/verify/start/ \
   "risk_score": 0.18,
   "reason_codes": [],
   "timestamp": "2025-03-05T14:32:00Z"
-}
-```
-
-### POST /api/v1/verify/ocr/ (fallback)
-```json
-{
-  "extracted_fields": {
-    "name": "Amina Yusuf",
-    "id_number": "NG-9384-2019",
-    "dob": "1994-07-22",
-    "expiry": "2029-07-22"
-  },
-  "ocr_confidence": 0.87
 }
 ```
 

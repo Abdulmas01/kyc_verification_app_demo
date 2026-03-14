@@ -23,7 +23,7 @@ Identity verification in Africa is broken in three specific ways:
 ### The Verydent Difference
 | Advantage | What It Means |
 | :--- | :--- |
-| **Edge-first inference** | Face matching, liveness, quality scoring run on device. Works on 2G. Biometrics never leave the phone. |
+| **Server-authoritative hybrid** | Mobile guides capture; server computes final biometric scores. Secure and reproducible without trusting client signals. |
 | **African-first documents** | Built for Nigerian NIN, Ghana Card, Kenyan Huduma Namba, SA ID — not retrofitted from a Western baseline. |
 | **Cost structure** | Compressed ONNX models on CPU servers — not GPU. Mobile pre-screening reduces unnecessary uploads. 5–20× cheaper than Jumio/Onfido server costs. |
 
@@ -42,12 +42,12 @@ This design was chosen deliberately over a fully edge-first alternative. A fully
 | Document quality TFLite model | Mobile | Real-time camera UX feedback only — never sent to server |
 | ML Kit boundary detection | Mobile | Perspective warp, normalise image before upload |
 | ML Kit face detection | Mobile | Confirm face present before capture |
-| Active liveness challenges | Mobile (ML Kit) | Blink + head-turn challenge-response |
+| Active liveness challenges | Mobile (ML Kit) | UX guidance only (blink + head-turn) |
 | AES-256-GCM image encryption | Mobile | Secure images before upload |
 | ECDSA payload signing | Mobile (TEE) | Attest payload origin and integrity |
 | Play Integrity token | Mobile | Attest device and app authenticity |
 | Document quality (authoritative) | Server (ONNX) | Quality score that feeds decision engine |
-| OCR + field extraction | Server | ML Kit primary / Tesseract fallback |
+| OCR + field extraction | Server | Tesseract + MRZ (authoritative), ML Kit optional UX pre-fill |
 | Face embedding + similarity | Server (ONNX) | Authoritative face match score |
 | Passive liveness scoring | Server (ONNX) | Authoritative liveness score |
 | Decision engine | Server (XGBoost) | P(genuine) → ACCEPT / REVIEW / REJECT |
@@ -67,8 +67,8 @@ Because the server computes all authoritative inference from raw encrypted image
 | Fabricated biometric scores | No client scores trusted — server computes all scores from raw images |
 | Rooted device | Play Integrity fails → rejected |
 | Modified APK | Play Integrity fails → rejected |
-| Photo / print attack | Passive liveness model + active challenge catches this |
-| Deepfake video replay | Active challenge (blink + head turn) required |
+| Photo / print attack | Passive liveness model (server) + active challenge UX helps capture |
+| Deepfake video replay | Passive liveness baseline; advanced deepfake defense is future work |
 | Scripted replay attack | **Idempotency hash check drops duplicate images instantly** |
 
 ---
@@ -179,7 +179,7 @@ The data flywheel is the long-term moat. Every real verification session improve
 | SDK Models | TFLite (bundled) | Client device (free) |
 | CDN / Static | Cloudflare | Free tier |
 
-Infrastructure cost at launch: ~$50/month. Profitable from the first Starter plan customer. This is the advantage of edge-first inference — no GPU servers, no cloud OCR API costs.
+Infrastructure cost at launch: ~$50/month. Profitable from the first Starter plan customer. This is the advantage of server-authoritative CPU inference — no GPU servers, no cloud OCR API costs.
 
 ### Funding Milestones
 | Phase | Timeline | Target | Goal |

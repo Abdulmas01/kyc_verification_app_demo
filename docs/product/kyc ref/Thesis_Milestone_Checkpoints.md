@@ -8,6 +8,22 @@ Bring it to every session with Claude so we start from the right place.
 
 ---
 
+## Implementation Readiness Checklist (Before Flutter)
+
+Use this short checklist to confirm the pipeline is stable before building the Flutter app.
+
+- [ ] Architecture decision locked: server-authoritative inference, mobile UX only
+- [ ] Backend API contract is final: `start → upload → poll`
+- [ ] OCR pipeline works server-side (Tesseract + MRZ parsing)
+- [ ] Face embedding model runs in ONNX Runtime on the server
+- [ ] Liveness model runs in ONNX Runtime on the server
+- [ ] Decision engine returns consistent risk scores and reason codes
+- [ ] End-to-end backend flow runs on sample images (no mobile yet)
+
+If any item is unchecked, fix it before starting Flutter to avoid rework.
+
+---
+
 ## BEFORE YOU START ANYTHING
 ### Readiness Check
 
@@ -414,7 +430,7 @@ They will block you later at the worst possible time.
 ### Criteria — Did it work?
 
 **Green — Achieved**
-- POST /verify/submit/ returns a decision in < 5 seconds
+- POST /verify/upload/ accepted and GET /verify/{session_id}/ returns a decision in < 5 seconds
 - Django admin shows sessions with risk scores and decision
 - Manual approve/reject works in admin
 - Docker-compose up brings everything up cleanly
@@ -443,7 +459,7 @@ They will block you later at the worst possible time.
 ---
 
 ### Checkpoint questions
-- Average API response time for /verify/submit/? ____ms
+- Average API response time for /verify/{session_id}/? ____ms
 - Does admin console show risk scores? Yes / No
 - Is Docker-compose working? Yes / No / Partially
 - Biggest unexpected problem in backend development?

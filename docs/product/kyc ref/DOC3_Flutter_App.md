@@ -16,7 +16,7 @@
 | Camera | camera 0.10+ | Fine-grained frame access needed for quality scoring |
 | ML Inference | tflite_flutter 0.10+ | Run .tflite models on-device |
 | Face Detection | google_mlkit_face_detection | Free, on-device, accurate |
-| OCR | google_mlkit_text_recognition | Free, on-device, supports Latin + Arabic |
+| OCR (optional UX) | google_mlkit_text_recognition | Optional on-device pre-fill only |
 | HTTP | dio 5.4 | Interceptors for auth headers, retry logic |
 | Local Storage | flutter_secure_storage | Store session token + API key securely |
 | Navigation | go_router 13.0 | Declarative, deep-link ready |
@@ -122,7 +122,7 @@ dependencies:
 
   # ML Kit (on-device, free)
   google_mlkit_face_detection: ^0.9.0
-  google_mlkit_text_recognition: ^0.11.0
+  google_mlkit_text_recognition: ^0.11.0 # optional UX pre-fill only
 
   # TFLite inference
   tflite_flutter: ^0.10.4
@@ -314,10 +314,11 @@ class KycApi {
     return StartSessionResponse.fromJson(response.data);
   }
 
-  /// Step 2 (optional): OCR fallback — send document image to server
-  Future<OcrFallbackResponse> runOcrFallback({
+  /// Step 2: Upload images (server-authoritative inference)
+  Future<UploadResponse> uploadVerification({
     required String sessionToken,
     required List<int> documentImageBytes,
+    required List<int> selfieImageBytes,
   }) async {
     final formData = FormData.fromMap({
       'session_token': sessionToken,
@@ -325,20 +326,20 @@ class KycApi {
         documentImageBytes,
         filename: 'document.jpg',
       ),
+      'selfie_image': MultipartFile.fromBytes(
+        selfieImageBytes,
+        filename: 'selfie.jpg',
+      ),
     });
-    final response = await _dio.post('/verify/ocr/', data: formData);
-    return OcrFallbackResponse.fromJson(response.data);
+    final response = await _dio.post('/verify/upload/', data: formData);
+    return UploadResponse.fromJson(response.data);
   }
 
-  /// Step 3: Submit all scores — get final decision
-  Future<VerificationResult> submitVerification({
-    required String sessionToken,
-    required VerificationPayload payload,
+  /// Step 3: Poll for result
+  Future<VerificationResult> getResult({
+    required String sessionId,
   }) async {
-    final response = await _dio.post('/verify/submit/', data: {
-      'session_token': sessionToken,
-      ...payload.toJson(),
-    });
+    final response = await _dio.get('/verify/$sessionId/');
     return VerificationResult.fromJson(response.data);
   }
 }
@@ -347,46 +348,20 @@ class KycApi {
 ```dart
 // lib/core/network/models/verification_models.dart
 
-class VerificationPayload {
-  final double faceSimilarity;
-  final double livenessScore;
-  final double ocrConfidence;
-  final double docQualityScore;
-  final double fieldValidScore;
-  final bool? challengeSuccess;
-  final String? extractedName;
-  final String? extractedIdNumber;
-  final String? extractedDob;
-  final String? extractedExpiry;
-  final int attemptNumber;
+class UploadResponse {
+  final String sessionId;
+  final int estimatedWaitMs;
 
-  const VerificationPayload({
-    required this.faceSimilarity,
-    required this.livenessScore,
-    required this.ocrConfidence,
-    required this.docQualityScore,
-    required this.fieldValidScore,
-    this.challengeSuccess,
-    this.extractedName,
-    this.extractedIdNumber,
-    this.extractedDob,
-    this.extractedExpiry,
-    this.attemptNumber = 1,
+  const UploadResponse({
+    required this.sessionId,
+    required this.estimatedWaitMs,
   });
 
-  Map<String, dynamic> toJson() => {
-    'face_similarity':    faceSimilarity,
-    'liveness_score':     livenessScore,
-    'ocr_confidence':     ocrConfidence,
-    'doc_quality_score':  docQualityScore,
-    'field_valid_score':  fieldValidScore,
-    'challenge_success':  challengeSuccess,
-    'extracted_name':     extractedName,
-    'extracted_id_number': extractedIdNumber,
-    'extracted_dob':      extractedDob,
-    'extracted_expiry':   extractedExpiry,
-    'attempt_number':     attemptNumber,
-  };
+  factory UploadResponse.fromJson(Map<String, dynamic> json) =>
+    UploadResponse(
+      sessionId: json['session_id'],
+      estimatedWaitMs: json['estimated_wait_ms'] ?? 1500,
+    );
 }
 
 class VerificationResult {
@@ -1176,7 +1151,6 @@ import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart
 
 enum ProcessingStep {
   startingSession,
-  runningOcr,
   computingScores,
   submittingToServer,
   done,
@@ -1230,51 +1204,17 @@ class ProcessingController extends StateNotifier<ProcessingState> {
         deviceOs: 'android',
       );
 
-      // Step 2: OCR — try on-device first
-      _update(ProcessingStep.runningOcr, 'Reading document...');
-      final ocrResult = await _runOnDeviceOcr(captureData.documentImage);
-
-      // If on-device OCR confidence is low, use server fallback
-      OcrFallbackResponse? serverOcr;
-      if (ocrResult.confidence < 0.65) {
-        serverOcr = await _api.runOcrFallback(
-          sessionToken: session.sessionToken,
-          documentImageBytes: captureData.documentImageBytes,
-        );
-      }
-
-      final finalOcr = serverOcr ?? ocrResult;
-
-      // Step 3: Compute all scores
-      _update(ProcessingStep.computingScores, 'Analysing biometrics...');
-
-      // Field validation score (basic rules)
-      final fieldScore = _validateExtractedFields(
-        name:     finalOcr.extractedName,
-        idNumber: finalOcr.extractedIdNumber,
-        expiry:   finalOcr.extractedExpiry,
-      );
-
-      // Step 4: Submit to backend
-      _update(ProcessingStep.submittingToServer, 'Completing verification...');
-
-      final payload = VerificationPayload(
-        faceSimilarity:   captureData.faceSimilarity,
-        livenessScore:    captureData.livenessScore,
-        ocrConfidence:    finalOcr.confidence,
-        docQualityScore:  captureData.docQualityScore,
-        fieldValidScore:  fieldScore,
-        challengeSuccess: captureData.challengeSuccess,
-        extractedName:    finalOcr.extractedName,
-        extractedIdNumber: finalOcr.extractedIdNumber,
-        extractedDob:     finalOcr.extractedDob,
-        extractedExpiry:  finalOcr.extractedExpiry,
-      );
-
-      final result = await _api.submitVerification(
+      // Step 2: Upload images for server-authoritative inference
+      _update(ProcessingStep.submittingToServer, 'Uploading images...');
+      final upload = await _api.uploadVerification(
         sessionToken: session.sessionToken,
-        payload: payload,
+        documentImageBytes: captureData.documentImageBytes,
+        selfieImageBytes: captureData.selfieImageBytes,
       );
+
+      // Step 3: Poll for result
+      _update(ProcessingStep.computingScores, 'Processing on server...');
+      final result = await _api.getResult(sessionId: upload.sessionId);
 
       state = state.copyWith(
         step:    ProcessingStep.done,
@@ -1288,42 +1228,6 @@ class ProcessingController extends StateNotifier<ProcessingState> {
         errorMessage: 'Verification failed. Please try again.',
       );
     }
-  }
-
-  Future<OcrResult> _runOnDeviceOcr(dynamic documentImage) async {
-    final textRecognizer = TextRecognizer(script: TextRecognitionScript.latin);
-    final inputImage = InputImage.fromFilePath(documentImage.path);
-    final recognizedText = await textRecognizer.processImage(inputImage);
-    await textRecognizer.close();
-
-    // Parse recognized blocks into fields
-    final fullText = recognizedText.text;
-    return OcrResult(
-      rawText:       fullText,
-      extractedName: _parseNameFromText(fullText),
-      extractedIdNumber: _parseIdFromText(fullText),
-      confidence: _estimateOcrConfidence(recognizedText),
-    );
-  }
-
-  double _validateExtractedFields({
-    String? name, String? idNumber, String? expiry
-  }) {
-    double score = 0.0;
-    int checks = 0;
-
-    if (name != null && name.length > 3) { score += 1; checks++; }
-    if (idNumber != null && idNumber.length > 5) { score += 1; checks++; }
-    if (expiry != null) {
-      // Check not expired
-      try {
-        final expiryDate = DateTime.parse(expiry);
-        if (expiryDate.isAfter(DateTime.now())) { score += 1; }
-      } catch (_) {}
-      checks++;
-    }
-
-    return checks > 0 ? score / checks : 0.5;
   }
 
   void _update(ProcessingStep step, String message) {
@@ -1609,17 +1513,12 @@ HomeScreen
 DocumentCaptureScreen
     ↓ Camera stream → QualityModel → live feedback
     ↓ Auto-capture when GOOD quality held for 1.5s
-    ↓ ML Kit OCR on captured image
-    ↓ Extract doc face embedding (FaceModel)
 SelfieCaptureScreen
     ↓ ML Kit Face Detection → blink + head turn challenges
-    ↓ LivenessModel → liveness score
-    ↓ FaceModel → selfie embedding
-    ↓ CosineSimilarity(docEmbedding, selfieEmbedding) → face_similarity
 ProcessingScreen
     ↓ POST /verify/start/ → session_token
-    ↓ OCR fallback if confidence < 0.65
-    ↓ POST /verify/submit/ → { all scores }
+    ↓ POST /verify/upload/ → document + selfie images
+    ↓ GET /verify/{session_id}/ → decision
     ↓ Receive { decision, risk_score, reason_codes }
 ResultScreen
     → ACCEPT ✅ / REJECT ❌ / MANUAL_REVIEW ⏳
@@ -1648,13 +1547,13 @@ ResultScreen
 
 **Build with mock scores first.** Before Document 1 models are trained, hardcode scores in the controller:
 ```dart
-// Temporary mock while models are training
-final mockPayload = VerificationPayload(
-  faceSimilarity:  0.87,
-  livenessScore:   0.92,
-  ocrConfidence:   0.85,
-  docQualityScore: 0.91,
-  fieldValidScore: 0.88,
+// Temporary mock while backend integration is pending
+const mockResult = VerificationResult(
+  sessionId: 'demo',
+  decision: 'ACCEPT',
+  riskScore: 0.08,
+  reasonCodes: [],
+  timestamp: '2026-03-01T12:00:00Z',
 );
 ```
 This lets you build and test the full UI/API flow weeks before the ML work is done.

@@ -11,10 +11,9 @@ MOBILE
   2. Boundary Detection (ML Kit)     → find card corners
   3. Perspective Warp (OpenCV)       → flatten the document
 
-SERVER
-  4. OCR (ML Kit primary)            → extract all text blocks
+SERVER (authoritative)
+  4. OCR (Tesseract + MRZ)           → extract all text blocks
   5. Field Extraction (your code)    → get name, ID, dates
-  6. Tesseract fallback              → if ML Kit confidence < 0.65
 ```
 
 Quality always runs first. No point running OCR on a blurry image.
@@ -28,7 +27,7 @@ Quality always runs first. No point running OCR on a blurry image.
 | Quality Classifier | ✅ Train on synthetic data | — |
 | Boundary Detection | Integration only | ML Kit |
 | Perspective Warp | 10 lines OpenCV | OpenCV library |
-| OCR | Integration only | ML Kit / Tesseract |
+| OCR | Integration only | Tesseract (+ optional ML Kit UX) |
 | Field Extraction | ✅ Write regex rules | — |
 | MRZ Parser | ✅ Write parser (or use library) | python-mrz library |
 
@@ -141,7 +140,7 @@ Each template = one field extractor rule set = half day of work.
 
 ## Edge Case 4 — OCR Character Substitution Errors
 
-Even on a clean image ML Kit makes mistakes. The dangerous ones:
+Even on a clean image OCR makes mistakes. The dangerous ones:
 
 ```
 0 vs O  → "N0NAME"   vs "NONAME"
@@ -358,15 +357,10 @@ def tesseract_ocr(image):
     return data
 ```
 
-### When Tesseract Triggers
+### OCR Source (Server-Authoritative)
 ```python
-ML_KIT_CONFIDENCE_THRESHOLD = 0.65
-
-if mlkit_confidence < ML_KIT_CONFIDENCE_THRESHOLD:
-    result = tesseract_ocr(document_image)
-    source = 'tesseract'
-else:
-    source = 'mlkit'
+# Server always runs Tesseract + MRZ parsing for authoritative fields.
+source = 'tesseract'
 ```
 
 ---
@@ -409,7 +403,7 @@ def compute_ocr_confidence(extracted_fields, source):
 
 | Task | Zero experience | Have done OCR before |
 |---|---|---|
-| ML Kit integration | 2–3 hours | 1 hour |
+| ML Kit integration (boundary only) | 2–3 hours | 1 hour |
 | Perspective warp | 1 day | 2–3 hours |
 | MRZ parser setup | 2 hours | 1 hour |
 | NIN field extractor | 1–2 days | Half day |
