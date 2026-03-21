@@ -5,12 +5,15 @@ import 'package:kyc_verification_app_demo/core/extension/context_extention.dart'
 import 'package:kyc_verification_app_demo/core/theme/app_spacing.dart';
 import 'package:kyc_verification_app_demo/core/widget/button_widget.dart';
 
+import '../../../domain/models/kyc_capture_bundle.dart';
 import 'processing_step.dart';
 
 class SelfieCaptureStep extends StatefulWidget {
-  const SelfieCaptureStep({super.key});
+  const SelfieCaptureStep({super.key, required this.captureBundle});
 
   static const String path = '/kyc/selfie';
+
+  final KycCaptureBundle captureBundle;
 
   @override
   State<SelfieCaptureStep> createState() => _SelfieCaptureStepState();
@@ -87,7 +90,11 @@ class _SelfieCaptureStepState extends State<SelfieCaptureStep> {
 
       Navigator.of(context).push(
         MaterialPageRoute(
-          builder: (_) => const ProcessingStep(),
+          builder: (_) => ProcessingStep(
+            captureBundle: widget.captureBundle.copyWith(
+              selfiePath: file.path,
+            ),
+          ),
         ),
       );
     } catch (e) {

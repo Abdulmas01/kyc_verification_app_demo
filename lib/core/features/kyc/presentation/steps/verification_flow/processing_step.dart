@@ -6,12 +6,15 @@ import 'package:kyc_verification_app_demo/core/theme/app_loader.dart';
 import 'package:kyc_verification_app_demo/core/theme/app_spacing.dart';
 
 import '../../screens/result_screen.dart';
+import '../../../domain/models/kyc_capture_bundle.dart';
 import '../../../domain/models/verification_result.dart';
 
 class ProcessingStep extends StatefulWidget {
-  const ProcessingStep({super.key});
+  const ProcessingStep({super.key, required this.captureBundle});
 
   static const String path = '/kyc/processing';
+
+  final KycCaptureBundle captureBundle;
 
   @override
   State<ProcessingStep> createState() => _ProcessingStepState();

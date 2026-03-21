@@ -1,13 +1,13 @@
-import 'dart:io';
-
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:google_mlkit_object_detection/google_mlkit_object_detection.dart';
 import 'package:kyc_verification_app_demo/core/extension/context_extention.dart';
 import 'package:kyc_verification_app_demo/core/theme/app_spacing.dart';
+import 'package:kyc_verification_app_demo/core/utils/image_utils.dart';
 import 'package:kyc_verification_app_demo/core/widget/button_widget.dart';
 
 import '../../widgets/document_overlay_widget.dart';
+import '../../../domain/models/kyc_capture_bundle.dart';
 import 'selfie_capture_step.dart';
 
 class DocumentCaptureStep extends StatefulWidget {
@@ -82,18 +82,34 @@ class _DocumentCaptureStepState extends State<DocumentCaptureStep> {
       final objects = await _objectDetector.processImage(inputImage);
 
       if (!mounted) return;
+      final detectedObject = objects.isNotEmpty ? objects.first : null;
+      if (detectedObject == null) {
+        if (!mounted) return;
+        setState(() {
+          _documentDetected = false;
+          _statusMessage = 'No document detected. Try again.';
+        });
+        return;
+      }
+
+      final normalized = await ImageUtils.normalizeDocumentImage(
+        inputPath: file.path,
+        boundingBox: detectedObject.boundingBox,
+      );
+
+      if (!mounted) return;
       setState(() {
-        _documentDetected = objects.isNotEmpty;
-        _statusMessage = _documentDetected
-            ? 'Document detected. Looks good!'
-            : 'No document detected. Try again.';
+        _documentDetected = true;
+        _statusMessage = 'Document detected. Looks good!';
       });
 
       if (_documentDetected) {
         if (!mounted) return;
         Navigator.of(context).push(
           MaterialPageRoute(
-            builder: (_) => const SelfieCaptureStep(),
+            builder: (_) => SelfieCaptureStep(
+              captureBundle: KycCaptureBundle(documentPath: normalized.path),
+            ),
           ),
         );
       }
