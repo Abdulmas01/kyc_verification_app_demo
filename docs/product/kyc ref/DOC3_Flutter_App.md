@@ -34,9 +34,9 @@ kyc_flutter/
 │   │
 │   ├── core/
 │   │   ├── network/
-│   │   │   ├── api_client.dart     # Dio setup + interceptors
-│   │   │   ├── kyc_api.dart        # All API calls
-│   │   │   └── models/             # Request/Response DTOs
+│   │   │   ├── dio_client.dart     # Dio setup + interceptors
+│   │   │   ├── endpoints.dart        # All API calls endpoints
+│   │   │── models/             # Request/Response DTOs
 │   │   │       ├── session_models.dart
 │   │   │       └── verification_models.dart
 │   │   ├── ml/

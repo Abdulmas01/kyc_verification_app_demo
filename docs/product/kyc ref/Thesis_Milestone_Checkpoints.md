@@ -24,6 +24,125 @@ If any item is unchecked, fix it before starting Flutter to avoid rework.
 
 ---
 
+## API Contract Summary (Backend)
+
+```
+POST /api/v1/verify/start/    → { session_token, expires_in }
+POST /api/v1/verify/upload/   → { session_id, estimated_wait_ms }
+GET  /api/v1/verify/{id}/     → { decision, risk_score, reason_codes, timestamp }
+```
+
+This is the only mobile ↔ backend contract used in the thesis prototype.
+
+---
+
+## Flutter Task Checklist (Milestone-Based)
+
+Use this as a complete build checklist so nothing is missed. Check off in order.
+
+---
+
+### Milestone F1 — Project Setup & Permissions
+- [ ] Create Flutter project structure (per DOC3)
+- [ ] Add dependencies (camera, mlkit, dio, tflite_flutter, riverpod, etc.)
+- [ ] Android permissions set (CAMERA, INTERNET)
+- [ ] iOS permissions set (NSCameraUsageDescription)
+- [ ] Basic routing wired (home → document → selfie → processing → result)
+- [ ] Build runs on a physical Android device
+
+---
+
+### Milestone F2 — Camera + Document Capture UX
+- [ ] Camera preview renders reliably
+- [ ] Document frame overlay drawn (ID card aspect ratio)
+- [ ] ML Kit boundary detection integrated
+- [ ] Perspective warp applied to document image
+- [ ] Auto-capture when quality is GOOD for 1.5s
+- [ ] Encrypted document image saved locally
+
+---
+
+### Milestone F3 — On-Device Quality Feedback (UX Only)
+- [ ] TFLite doc_quality model loads at startup
+- [ ] Frame skipping implemented (every 3rd frame)
+- [ ] Real-time quality label + message displayed
+- [ ] Edge cases handled (no document, glare, dark)
+
+---
+
+### Milestone F4 — Selfie + Active Liveness UX
+- [ ] Front camera selfie preview works
+- [ ] ML Kit face detection integrated
+- [ ] Blink + head-turn challenge prompts show correctly
+- [ ] Challenge completion tracked (UX only)
+- [ ] Best selfie frame captured and encrypted
+
+---
+
+### Milestone F5 — Backend API Integration (Authoritative)
+- [ ] `/verify/start/` called successfully
+- [ ] `/verify/upload/` sends document + selfie images
+- [ ] `/verify/{session_id}/` polled until decision
+- [ ] Errors surfaced to user with retry path
+
+---
+
+### Milestone F6 — Result Screen + Reason Codes
+- [ ] Result screen shows ACCEPT / REJECT / MANUAL_REVIEW
+- [ ] Risk score displayed (optional, thesis demo)
+- [ ] Reason codes rendered as chips
+- [ ] “Done” returns to home
+
+---
+
+### Milestone F7 — Reliability & Polish
+- [ ] Handles permission denial gracefully
+- [ ] Handles network loss (retry + timeout)
+- [ ] Ensures no UI jank (move heavy work off UI thread)
+- [ ] App survives background/foreground transitions
+- [ ] Basic analytics/logging for failures
+
+---
+
+## Flutter Daily Sprint Plan (Suggested)
+
+Short, focused daily goals to keep momentum and avoid rework.
+
+### Day 1 — F1 Setup
+- Project scaffold + dependencies
+- Permissions + routing
+- Run on physical device
+
+### Day 2 — F2 Camera + Document Capture
+- Camera preview + overlay
+- Boundary detection + warp
+- Auto-capture flow
+
+### Day 3 — F3 Quality Feedback
+- TFLite model loading
+- Frame skipping + live feedback
+- Edge cases (no doc, glare, dark)
+
+### Day 4 — F4 Selfie + Liveness UX
+- Front camera + face detection
+- Blink/head-turn prompts
+- Best frame capture
+
+### Day 5 — F5 Backend Integration
+- start → upload → poll flow
+- Error + retry handling
+
+### Day 6 — F6 Result Screen
+- Decision UI + reason codes
+- Risk score (optional)
+- Done → Home
+
+### Day 7 — F7 Polish + Stabilization
+- Background/foreground handling
+- Performance fixes
+- Final QA on device
+
+
 ## BEFORE YOU START ANYTHING
 ### Readiness Check
 
