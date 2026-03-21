@@ -6,4 +6,5 @@ class AppAssets {
   static const String schoolTeacher = "assets/image/shoolteacher.jpg";
   static const String logoDark = "assets/images/logo.png";
   static const String logoLight = "assets/images/logo2_lightmode.png";
+  static const String docQualityModel = "assets/models/doc_quality.tflite";
 }
