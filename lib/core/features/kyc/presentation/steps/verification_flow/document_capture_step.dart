@@ -8,8 +8,10 @@ import 'package:kyc_verification_app_demo/core/camera/frame_processor.dart';
 import 'package:kyc_verification_app_demo/core/extension/context_extention.dart';
 import 'package:kyc_verification_app_demo/core/ml/quality_model.dart';
 import 'package:kyc_verification_app_demo/core/theme/app_spacing.dart';
+import 'package:kyc_verification_app_demo/core/utils/toast_utils.dart';
 import 'package:kyc_verification_app_demo/core/utils/image_utils.dart';
 import 'package:kyc_verification_app_demo/core/widget/button_widget.dart';
+import 'package:flutter/services.dart';
 
 import '../../../domain/models/kyc_capture_bundle.dart';
 import '../../controllers/document_capture_ui_notifier.dart';
@@ -133,7 +135,8 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep> {
       final detectedObject = objects.isNotEmpty ? objects.first : null;
       if (detectedObject == null) {
         notifier.setDocumentDetected(false);
-        notifier.setStatus('No document detected. Try again.');
+        notifier.setError('No document detected. Try again.');
+        HapticFeedback.lightImpact();
         await _startImageStream();
         return;
       }
@@ -146,6 +149,8 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep> {
       if (!mounted) return;
       notifier.setDocumentDetected(true);
       notifier.setStatus('Document detected. Looks good!');
+      notifier.clearError();
+      HapticFeedback.mediumImpact();
 
       Navigator.of(context).push(
         MaterialPageRoute(
@@ -156,7 +161,8 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep> {
       );
     } catch (e) {
       if (!mounted) return;
-      notifier.setStatus('Capture failed. Please try again.');
+      notifier.setError('Capture failed. Please try again.');
+      ToastUtil.showErrorToast('Document capture failed. Try again.');
     } finally {
       if (!mounted) return;
       notifier.setDetecting(false);
@@ -190,6 +196,10 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep> {
             ),
             const SizedBox(height: AppSpacing.s12),
             Text(uiState.statusMessage, style: context.textTheme.bodySmall),
+            if (uiState.hasError) ...[
+              const SizedBox(height: AppSpacing.s8),
+              _buildErrorBanner(context, uiState.errorMessage ?? ''),
+            ],
             const SizedBox(height: AppSpacing.s8),
             Text(
               'Confidence: ${(uiState.qualityConfidence * 100).toStringAsFixed(0)}%',
@@ -247,6 +257,27 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep> {
               ),
             ],
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildErrorBanner(BuildContext context, String message) {
+    final colors = Theme.of(context).colorScheme;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.s12,
+        vertical: AppSpacing.s8,
+      ),
+      decoration: BoxDecoration(
+        color: colors.errorContainer,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Text(
+        message,
+        style: context.textTheme.bodySmall?.copyWith(
+          color: colors.onErrorContainer,
         ),
       ),
     );

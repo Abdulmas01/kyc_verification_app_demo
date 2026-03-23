@@ -43,11 +43,11 @@ Use this as a complete build checklist so nothing is missed. Check off in order.
 ---
 
 ### Milestone F1 — Project Setup & Permissions
-- [ ] Create Flutter project structure (per DOC3)
-- [ ] Add dependencies (camera, mlkit, dio, tflite_flutter, riverpod, etc.)
-- [ ] Android permissions set (CAMERA, INTERNET)
-- [ ] iOS permissions set (NSCameraUsageDescription)
-- [ ] Basic routing wired (home → document → selfie → processing → result)
+- [x] Create Flutter project structure (per DOC3)
+- [x] Add dependencies (camera, mlkit, dio, tflite_flutter, riverpod, etc.)
+- [x] Android permissions set (CAMERA, INTERNET)
+- [x] iOS permissions set (NSCameraUsageDescription)
+- [x] Basic routing wired (home → document → selfie → processing → result)
 - [ ] Build runs on a physical Android device
 
 ---
@@ -63,10 +63,10 @@ Use this as a complete build checklist so nothing is missed. Check off in order.
 ---
 
 ### Milestone F3 — On-Device Quality Feedback (UX Only)
-- [ ] TFLite doc_quality model loads at startup
-- [ ] Frame skipping implemented (every 3rd frame)
-- [ ] Real-time quality label + message displayed
-- [ ] Edge cases handled (no document, glare, dark)
+- [x] TFLite doc_quality model loads at startup
+- [x] Frame skipping implemented (every 3rd frame)
+- [x] Real-time quality label + message displayed
+- [x] Edge cases handled (no document, glare, dark)
 
 ---
 
@@ -80,18 +80,18 @@ Use this as a complete build checklist so nothing is missed. Check off in order.
 ---
 
 ### Milestone F5 — Backend API Integration (Authoritative)
-- [ ] `/verify/start/` called successfully
-- [ ] `/verify/upload/` sends document + selfie images
-- [ ] `/verify/{session_id}/` polled until decision
-- [ ] Errors surfaced to user with retry path
+- [x] `/verify/start/` called successfully
+- [x] `/verify/upload/` sends document + selfie images
+- [x] `/verify/{session_id}/` polled until decision
+- [x] Errors surfaced to user with retry path
 
 ---
 
 ### Milestone F6 — Result Screen + Reason Codes
-- [ ] Result screen shows ACCEPT / REJECT / MANUAL_REVIEW
-- [ ] Risk score displayed (optional, thesis demo)
-- [ ] Reason codes rendered as chips
-- [ ] “Done” returns to home
+- [x] Result screen shows ACCEPT / REJECT / MANUAL_REVIEW
+- [x] Risk score displayed (optional, thesis demo)
+- [x] Reason codes rendered as chips
+- [x] “Done” returns to home
 
 ---
 
@@ -183,10 +183,10 @@ They will block you later at the worst possible time.
 ### Criteria — Did it work?
 
 **Green — Achieved**
-- Test accuracy ≥ 88% on synthetic test set
-- INT8 PTQ accuracy drop ≤ 3 percentage points vs FP32
-- TFLite file exports cleanly and passes interpreter validation
-- Confusion matrix shows clear diagonal (most mistakes are between adjacent classes e.g. BLURRY/DARK, not GOOD/NO_DOCUMENT)
+- [x] Test accuracy ≥ 88% on synthetic test set
+- [x] INT8 PTQ accuracy drop ≤ 3 percentage points vs FP32
+- [x] TFLite file exports cleanly and passes interpreter validation
+- [x] Confusion matrix shows clear diagonal (most mistakes are between adjacent classes e.g. BLURRY/DARK, not GOOD/NO_DOCUMENT)
 
 **Yellow — Partial, continue with caution**
 - Test accuracy 75–87%

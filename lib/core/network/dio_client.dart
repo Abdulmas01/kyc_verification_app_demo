@@ -76,6 +76,7 @@ class DioClient {
     Map<String, dynamic>? queryParams,
     Options? options,
     CancelToken? cancelToken,
+    ProgressCallback? onSendProgress,
   }) async {
     return makeRequest(() {
       logger.i(data);
@@ -86,6 +87,7 @@ class DioClient {
         queryParameters: queryParams,
         options: options,
         cancelToken: cancelToken,
+        onSendProgress: onSendProgress,
       );
     });
   }

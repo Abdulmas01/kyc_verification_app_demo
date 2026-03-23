@@ -1,14 +1,17 @@
 import 'dart:io';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:kyc_verification_app_demo/core/network/dio_client.dart';
+import 'package:kyc_verification_app_demo/core/network/request_cancel_token.dart';
 
 import '../../data/data_sources/kyc_remote_data_source.dart';
+import '../../data/models/fetch_result_request.dart';
+import '../../data/models/start_session_request.dart';
+import '../../data/models/upload_verification_request.dart';
 import '../../data/repositories/kyc_repository.dart';
 import '../../data/repositories/kyc_repository_impl.dart';
 import '../../domain/models/verification_result.dart';
-import '../../domain/enums/verification_decision.dart';
+import '../models/verification_api_state.dart';
 
 final kycRepositoryProvider = Provider<KycRepository>((ref) {
   final dioClient = ref.watch(dioProvider);
@@ -17,52 +20,95 @@ final kycRepositoryProvider = Provider<KycRepository>((ref) {
 });
 
 class VerificationApiNotifier
-    extends AutoDisposeNotifier<AsyncValue<VerificationResult?>> {
+    extends AutoDisposeNotifier<VerificationApiState> {
+  static const int maxPollAttempts = 8;
+  static const Duration pollInterval = Duration(milliseconds: 1200);
+
+  RequestCancelToken? _cancelToken;
+
   @override
-  AsyncValue<VerificationResult?> build() => const AsyncData(null);
+  VerificationApiState build() {
+    ref.onDispose(_cancelActiveRequest);
+    return const VerificationApiState.idle();
+  }
+
+  void _cancelActiveRequest() {
+    _cancelToken?.cancel('KYC verification cancelled');
+    _cancelToken = null;
+  }
 
   Future<void> verify({
     required File documentImage,
     required File selfieImage,
   }) async {
-    state = const AsyncLoading();
+    _cancelActiveRequest();
+    _cancelToken = RequestCancelToken();
+    state = const VerificationApiState.uploading(progress: 0);
     final repo = ref.read(kycRepositoryProvider);
 
-    state = await AsyncValue.guard(() async {
+    try {
       final session = await repo.startSession(
-        appVersion: '1.0.0',
-        deviceOs: Platform.isIOS ? 'ios' : 'android',
+        StartSessionRequest(
+          appVersion: '1.0.0',
+          deviceOs: Platform.isIOS ? 'ios' : 'android',
+          cancelToken: _cancelToken,
+        ),
       );
 
       final upload = await repo.uploadVerification(
-        sessionToken: session.sessionToken,
-        documentImage: documentImage,
-        selfieImage: selfieImage,
+        UploadVerificationRequest(
+          sessionToken: session.sessionToken,
+          documentImage: documentImage,
+          selfieImage: selfieImage,
+          onSendProgress: (sent, total) {
+            if (total <= 0) return;
+            final progress = sent / total;
+            state = VerificationApiState.uploading(progress: progress);
+          },
+          cancelToken: _cancelToken,
+        ),
       );
 
-      // Simple poll loop (max 8 tries)
+      state = const VerificationApiState.polling();
+
+      // Simple poll loop (max attempts)
       VerificationResult? lastResult;
-      for (var i = 0; i < 8; i++) {
-        await Future.delayed(const Duration(milliseconds: 1200));
-        lastResult = await repo.fetchResult(upload.sessionId);
+      for (var i = 0; i < maxPollAttempts; i++) {
+        if (_cancelToken?.isCancelled ?? false) {
+          state = const VerificationApiState.idle();
+          return;
+        }
+        await Future.delayed(pollInterval);
+        lastResult = await repo.fetchResult(
+          FetchResultRequest(
+            sessionId: upload.sessionId,
+            cancelToken: _cancelToken,
+          ),
+        );
       }
 
-      return lastResult ??
-          VerificationResult(
-            sessionId: upload.sessionId,
-            decision: VerificationDecision.manualReview,
-            riskScore: 0.5,
-            reasonCodes: const ['PROCESSING_TIMEOUT'],
-          );
-    });
+      if (lastResult == null) {
+        state = const VerificationApiState.timeout();
+        return;
+      }
+
+      state = VerificationApiState.data(lastResult);
+    } catch (e, st) {
+      if (_cancelToken?.isCancelled ?? false) {
+        state = const VerificationApiState.idle();
+        return;
+      }
+      state = VerificationApiState.error(e, st);
+    }
   }
 
   void clear() {
-    state = const AsyncData(null);
+    _cancelActiveRequest();
+    state = const VerificationApiState.idle();
   }
 }
 
-final verificationApiProvider = AutoDisposeNotifierProvider<
-    VerificationApiNotifier, AsyncValue<VerificationResult?>>(
+final verificationApiProvider =
+    AutoDisposeNotifierProvider<VerificationApiNotifier, VerificationApiState>(
   VerificationApiNotifier.new,
 );

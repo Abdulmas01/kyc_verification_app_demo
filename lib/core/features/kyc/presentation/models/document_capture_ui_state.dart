@@ -1,10 +1,13 @@
 class DocumentCaptureUiState {
+  static const Object _sentinel = Object();
+
   final String statusMessage;
   final bool isDetecting;
   final bool documentDetected;
   final bool isQualityGood;
   final double qualityConfidence;
   final bool isAutoCapturing;
+  final String? errorMessage;
 
   const DocumentCaptureUiState({
     required this.statusMessage,
@@ -13,6 +16,7 @@ class DocumentCaptureUiState {
     required this.isQualityGood,
     required this.qualityConfidence,
     required this.isAutoCapturing,
+    this.errorMessage,
   });
 
   factory DocumentCaptureUiState.initial() {
@@ -23,6 +27,7 @@ class DocumentCaptureUiState {
       isQualityGood: false,
       qualityConfidence: 0,
       isAutoCapturing: false,
+      errorMessage: null,
     );
   }
 
@@ -33,6 +38,7 @@ class DocumentCaptureUiState {
     bool? isQualityGood,
     double? qualityConfidence,
     bool? isAutoCapturing,
+    Object? errorMessage = _sentinel,
   }) {
     return DocumentCaptureUiState(
       statusMessage: statusMessage ?? this.statusMessage,
@@ -41,6 +47,10 @@ class DocumentCaptureUiState {
       isQualityGood: isQualityGood ?? this.isQualityGood,
       qualityConfidence: qualityConfidence ?? this.qualityConfidence,
       isAutoCapturing: isAutoCapturing ?? this.isAutoCapturing,
+      errorMessage:
+          errorMessage == _sentinel ? this.errorMessage : errorMessage as String?,
     );
   }
+
+  bool get hasError => errorMessage != null && errorMessage!.isNotEmpty;
 }

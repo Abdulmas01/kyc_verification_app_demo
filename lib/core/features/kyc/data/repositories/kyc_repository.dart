@@ -1,20 +1,14 @@
-import 'dart:io';
-
+import '../models/start_session_request.dart';
 import '../models/start_session_response.dart';
+import '../models/fetch_result_request.dart';
 import '../models/upload_response.dart';
+import '../models/upload_verification_request.dart';
 import '../../domain/models/verification_result.dart';
 
 abstract class KycRepository {
-  Future<StartSessionResponse> startSession({
-    required String appVersion,
-    required String deviceOs,
-  });
+  Future<StartSessionResponse> startSession(StartSessionRequest request);
 
-  Future<UploadResponse> uploadVerification({
-    required String sessionToken,
-    required File documentImage,
-    required File selfieImage,
-  });
+  Future<UploadResponse> uploadVerification(UploadVerificationRequest request);
 
-  Future<VerificationResult> fetchResult(String sessionId);
+  Future<VerificationResult> fetchResult(FetchResultRequest request);
 }

@@ -3,7 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 import 'package:kyc_verification_app_demo/core/extension/context_extention.dart';
 import 'package:kyc_verification_app_demo/core/theme/app_spacing.dart';
+import 'package:kyc_verification_app_demo/core/utils/toast_utils.dart';
 import 'package:kyc_verification_app_demo/core/widget/button_widget.dart';
+import 'package:flutter/services.dart';
 
 import '../../../domain/models/kyc_capture_bundle.dart';
 import 'processing_step.dart';
@@ -24,6 +26,7 @@ class _SelfieCaptureStepState extends State<SelfieCaptureStep> {
   Future<void>? _initializeFuture;
   bool _isDetecting = false;
   String _statusMessage = 'Align your face inside the frame.';
+  String? _errorMessage;
 
   late final FaceDetector _faceDetector;
 
@@ -72,6 +75,7 @@ class _SelfieCaptureStepState extends State<SelfieCaptureStep> {
     setState(() {
       _isDetecting = true;
       _statusMessage = 'Checking for a face...';
+      _errorMessage = null;
     });
 
     try {
@@ -84,10 +88,14 @@ class _SelfieCaptureStepState extends State<SelfieCaptureStep> {
         setState(() {
           _statusMessage = 'No face detected. Try again.';
           _isDetecting = false;
+          _errorMessage = 'No face detected. Try again.';
         });
+        HapticFeedback.lightImpact();
+        ToastUtil.showErrorToast('No face detected. Try again.');
         return;
       }
 
+      HapticFeedback.mediumImpact();
       Navigator.of(context).push(
         MaterialPageRoute(
           builder: (_) => ProcessingStep(
@@ -101,7 +109,10 @@ class _SelfieCaptureStepState extends State<SelfieCaptureStep> {
       if (!mounted) return;
       setState(() {
         _statusMessage = 'Capture failed. Please try again.';
+        _errorMessage = 'Selfie capture failed. Try again.';
       });
+      HapticFeedback.lightImpact();
+      ToastUtil.showErrorToast('Selfie capture failed. Try again.');
     } finally {
       if (!mounted) return;
       setState(() => _isDetecting = false);
@@ -130,6 +141,10 @@ class _SelfieCaptureStepState extends State<SelfieCaptureStep> {
             ),
             const SizedBox(height: AppSpacing.s16),
             Text(_statusMessage, style: context.textTheme.bodySmall),
+            if (_errorMessage != null) ...[
+              const SizedBox(height: AppSpacing.s8),
+              _buildErrorBanner(context, _errorMessage!),
+            ],
             const SizedBox(height: AppSpacing.s16),
             Expanded(
               child: ClipRRect(
@@ -169,6 +184,27 @@ class _SelfieCaptureStepState extends State<SelfieCaptureStep> {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildErrorBanner(BuildContext context, String message) {
+    final colors = Theme.of(context).colorScheme;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.s12,
+        vertical: AppSpacing.s8,
+      ),
+      decoration: BoxDecoration(
+        color: colors.errorContainer,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Text(
+        message,
+        style: context.textTheme.bodySmall?.copyWith(
+          color: colors.onErrorContainer,
         ),
       ),
     );

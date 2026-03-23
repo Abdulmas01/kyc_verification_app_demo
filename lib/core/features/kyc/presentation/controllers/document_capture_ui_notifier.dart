@@ -11,6 +11,18 @@ class DocumentCaptureUiNotifier
     state = state.copyWith(statusMessage: message);
   }
 
+  void setError(String message) {
+    state = state.copyWith(
+      statusMessage: message,
+      errorMessage: message,
+    );
+  }
+
+  void clearError() {
+    if (!state.hasError) return;
+    state = state.copyWith(errorMessage: null);
+  }
+
   void setDetecting(bool value) {
     state = state.copyWith(isDetecting: value);
   }
@@ -32,6 +44,7 @@ class DocumentCaptureUiNotifier
       statusMessage: message,
       qualityConfidence: confidence,
       isQualityGood: isGood,
+      errorMessage: null,
     );
   }
 }
