@@ -78,6 +78,39 @@ Do not advance pages in the widget.
 
 ---
 ````md
+## 2.2) Request Cancellation (Keep Dio Out of Repos)
+
+If you need cancelable requests (e.g., polling or uploads), keep Dio-specific
+types inside the data source. Pass a neutral cancel token through request
+models instead.
+
+Pattern:
+- Create a `RequestCancelToken` wrapper (no Dio types exposed).
+- Add `cancelToken` to request models.
+- Data source maps `RequestCancelToken` to `CancelToken` internally.
+
+This keeps repositories framework-agnostic and easy to mock.
+
+Example:
+```dart
+final token = RequestCancelToken();
+
+await repo.uploadVerification(
+  UploadVerificationRequest(
+    sessionToken: session.sessionToken,
+    documentImage: documentImage,
+    selfieImage: selfieImage,
+    cancelToken: token,
+  ),
+);
+
+// Later (e.g., on dispose)
+token.cancel('User left screen');
+```
+````
+
+---
+````md
 ## 3) Retry Pattern (Using `Notifier` / `AutoDisposeNotifier` with `AsyncValue<User?>`)
 
 Use this pattern when you want:

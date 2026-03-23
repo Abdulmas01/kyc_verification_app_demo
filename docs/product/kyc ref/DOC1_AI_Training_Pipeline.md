@@ -339,23 +339,24 @@ config = {
 
 ---
 
-## Phase 3 — Model 2: Face Embedding (MobileFaceNet)
+## Phase 3 — Model 2: Face Embedding (Baseline + Mobile Option)
 
-**Task:** Given an aligned face image (112×112), produce a 128-dim L2-normalized embedding vector.
+**Task:** Given an aligned face image, produce an L2-normalized embedding vector.
 
-**Architecture:** Pretrained MobileFaceNet — do NOT train from scratch.
+**Architecture:** Use a pretrained model — do NOT train from scratch.
 
 ### Download Pretrained Weights
 
 ```python
-# Use facenet-pytorch which includes pretrained MobileFaceNet
+# Use facenet-pytorch which includes pretrained InceptionResnetV1
 from facenet_pytorch import InceptionResnetV1
 
 # OR download MobileFaceNet directly:
 # https://github.com/sirius-ai/MobileFaceNet_TF (TF version)
 # https://github.com/xuexingyu24/MobileFaceNet_Tutorial_Pytorch (PyTorch)
 
-# For this thesis: use facenet-pytorch pretrained on VGGFace2
+# Baseline for this thesis: InceptionResnetV1 pretrained on VGGFace2
+# Input: 160×160, Output: 512-dim embedding
 model = InceptionResnetV1(pretrained='vggface2').eval()
 # This gives you a production-quality face embedder immediately
 # Fine-tune only if you have a domain-specific face dataset
@@ -365,9 +366,13 @@ model = InceptionResnetV1(pretrained='vggface2').eval()
 
 The pretrained model already works for face verification. Your work is:
 
-1. **Face alignment pipeline** — detect face landmarks, align to canonical 112×112 pose
+1. **Face alignment pipeline** — detect landmarks, align to canonical size (baseline: 160×160)
 2. **Threshold experiment** — sweep similarity thresholds, measure FAR/FRR, plot ROC
 3. **Export to TFLite** — convert for mobile deployment
+
+**Optional mobile-first variant:**
+- MobileFaceNet (112×112 input, 128‑dim embedding)
+- If you switch, update preprocessing and export input size
 
 ```python
 # src/evaluation/metrics.py — Face Verification Evaluation
@@ -408,6 +413,9 @@ def find_eer(far_list, frr_list):
 ```
 
 **Evaluation dataset:** LFW (Labeled Faces in the Wild) — standard benchmark, publicly available.
+
+**Data split note:** This is evaluation-only. LFW provides predefined genuine/impostor pairs.
+There is no train/val split because the model is pretrained and not fine‑tuned.
 
 **Expected result:** EER ~2–5% using pretrained VGGFace2 weights — publishable result.
 
@@ -936,7 +944,7 @@ Every `mlflow.start_run()` block in the training scripts automatically logs to t
 |---|---|---|---|
 | 1 | Synthetic dataset generation | 1–2 days | Local / Colab |
 | 2 | Doc quality model training | 2–3 days | Colab |
-| 3 | Face embedding (fine-tune + eval) | 3–4 days | Colab |
+| 3 | Face embedding (evaluation only) | 2–3 days | Colab |
 | 4 | Liveness model training | 5–7 days | Kaggle |
 | 5 | Compression study (PTQ + distill × 3 models) | 5–7 days | Kaggle |
 | 6 | Decision engine | 1–2 days | Local |
@@ -959,9 +967,14 @@ Labels: ["GOOD", "BLURRY", "GLARE", "DARK", "NO_DOCUMENT"]
 
 ### face_embedder.onnx (server-authoritative)
 ```
+# Baseline (InceptionResnetV1, VGGFace2)
+Input:  float32[1, 3, 160, 160]   (aligned face, normalized -1 to 1)
+Output: float32[1, 512]            (L2-normalized embedding)
+Usage:  cosine_similarity(emb1, emb2) → float 0–1
+
+# Optional mobile-first variant (MobileFaceNet)
 Input:  float32[1, 3, 112, 112]   (aligned face, normalized -1 to 1)
 Output: float32[1, 128]            (L2-normalized embedding)
-Usage:  cosine_similarity(emb1, emb2) → float 0–1
 ```
 
 ### liveness.onnx (server-authoritative)

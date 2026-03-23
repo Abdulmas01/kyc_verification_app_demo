@@ -1,5 +1,5 @@
 # Face Embedding Pipeline
-## KYC Thesis — MobileFaceNet, LFW Evaluation, ONNX Export, Edge Cases
+## KYC Thesis — Face Embedding, LFW Evaluation, ONNX Export, Edge Cases
 
 ---
 
@@ -27,15 +27,21 @@ cosine_similarity(A, B) → face_similarity score (0.0 – 1.0)
 The score feeds the decision engine.
 You do not train this model. You evaluate a pretrained one.
 
+**Consistency note (thesis + deployment):**
+The same pretrained model is used for both:
+- Mobile UX (TFLite) for fast feedback
+- Backend (ONNX) for authoritative decisions
+
 ---
 
-## Why MobileFaceNet
+## Model Choice (Baseline + Mobile Option)
 
 | Model | Size | Accuracy (LFW) | Speed | Suitable |
 |---|---|---|---|---|
 | ArcFace (ResNet100) | 250MB | 99.8% | Slow | ❌ Too large |
 | FaceNet (Inception) | 95MB | 99.6% | Medium | ❌ Too large |
 | MobileFaceNet | 4MB | 99.5% | Fast | ✅ |
+| InceptionResnetV1 (VGGFace2) | ~95MB | 99.6% | Medium | ✅ baseline |
 | MobileNetV2-face | 14MB | 98.9% | Fast | ✅ acceptable |
 
 MobileFaceNet gives near-identical accuracy to the large models
@@ -43,13 +49,17 @@ at 4MB. This is the compression argument for your thesis —
 the gap between 4MB and 250MB is massive but the accuracy gap
 is 0.3%. That is a thesis finding worth a full paragraph.
 
-**Pretrained weights source:**
+**Pretrained weights source (baseline used in notebook):**
 ```
 facenet-pytorch library
-Trained on VGGFace2 (3.3M images, 9k identities)
-Input: 112×112 RGB face image
-Output: 128-dim L2-normalised embedding
+InceptionResnetV1 trained on VGGFace2 (3.3M images, 9k identities)
+Input: 160×160 RGB face image
+Output: 512-dim L2-normalised embedding
 ```
+
+**MobileFaceNet option (mobile-first):**
+Use a MobileFaceNet implementation with 112×112 input and 128‑dim output.
+If you switch, update preprocessing, export input shape, and thresholds.
 
 ---
 
@@ -102,7 +112,7 @@ SERVER (authoritative)
   Step 1b: Assess document face quality
   Step 1c: Handle degraded or missing photo gracefully
   Step 2: Align both faces (doc + selfie)
-  Step 3: Preprocess to 112×112
+  Step 3: Preprocess to model input size (baseline: 160×160)
   Step 4: Run MobileFaceNet on both
   Step 5: Compute cosine similarity
   Step 6: Apply threshold → match / no match
@@ -208,7 +218,7 @@ def detect_document_face(document_image):
             detector_backend='retinaface',
             enforce_detection=True
         )
-        return result  # returns aligned 112×112 face
+        return result  # returns aligned face (resize later)
     except:
         pass
 
@@ -391,7 +401,7 @@ def compute_decision(signals):
 Full document image after warp: 856 × 540 px
 NIN card face region: roughly top-left quadrant
 Typical face crop before resize: 80–130 × 100–160 px
-After resize to 112×112: upscaled (quality loss here)
+After resize to model input (baseline: 160×160): upscaled (quality loss here)
 ```
 
 ---
@@ -445,7 +455,7 @@ try:
     aligned_doc_face = align_face(doc_face_crop)
 except:
     # Use unaligned crop — lower accuracy but still works
-    aligned_doc_face = cv2.resize(doc_face_crop, (112, 112))
+    aligned_doc_face = cv2.resize(doc_face_crop, (160, 160))
     # Log this — it will show up as lower similarity scores
     alignment_failed = True
 ```
@@ -458,26 +468,26 @@ in limitations.
 
 ## Step 3 — Preprocessing
 
-MobileFaceNet expects a specific input format.
+The embedding model expects a specific input format.
 Getting this wrong produces garbage embeddings — the model
 runs without error but similarity scores are random.
 
 ```python
-def preprocess_face(image):
+def preprocess_face(image, target_size=(160, 160)):
     """
-    Prepare face image for MobileFaceNet.
+    Prepare face image for embedding model.
     Input: any size BGR image
-    Output: (1, 112, 112, 3) float32 tensor, values in [-1, 1]
+    Output: (1, H, W, 3) float32 tensor, values in [-1, 1]
     """
     # Resize to model input size
-    resized = cv2.resize(image, (112, 112),
+    resized = cv2.resize(image, target_size,
                          interpolation=cv2.INTER_CUBIC)
 
     # Convert BGR to RGB (OpenCV loads BGR, model expects RGB)
     rgb = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
 
     # Normalise to [-1, 1]
-    # This is the normalisation MobileFaceNet was trained with
+    # This is the normalisation used by common face embedding models
     normalized = (rgb.astype(np.float32) - 127.5) / 128.0
 
     # Add batch dimension
@@ -508,8 +518,8 @@ class FaceEmbedder:
 
     def embed(self, preprocessed_face):
         """
-        preprocessed_face: (1, 112, 112, 3) float32 array
-        returns: (128,) L2-normalised embedding
+        preprocessed_face: (1, H, W, 3) float32 array
+        returns: L2-normalised embedding (dim depends on model)
         """
         embedding = self.session.run(
             [self.output_name],
@@ -606,7 +616,7 @@ eer_threshold = thresholds[np.argmin(np.abs(fnr - fpr))]
 
 ---
 
-## LFW Evaluation Setup
+## LFW Evaluation Setup (No Training, Evaluation Only)
 
 LFW (Labeled Faces in the Wild) is the standard benchmark
 for face verification. This is how you get your EER number
@@ -673,9 +683,9 @@ def evaluate_on_lfw(embedder, lfw_pairs_file, lfw_images_dir):
 
 | Model | Expected EER | Your Target |
 |---|---|---|
-| MobileFaceNet FP32 | ~0.5% | Confirm this |
-| MobileFaceNet INT8 PTQ | ~1–3% | Document delta |
-| MobileFaceNet Distilled | ~2–4% | Document delta |
+| InceptionResnetV1 FP32 | ~0.5% | Confirm this |
+| MobileFaceNet FP32 | ~0.5–1.0% | Confirm this |
+| INT8 PTQ | +1–3pp | Document delta |
 
 The delta between FP32 and INT8 is your compression
 study finding for this model. Face embedding is more
@@ -697,7 +707,7 @@ from facenet_pytorch import InceptionResnetV1
 model = InceptionResnetV1(pretrained='vggface2').eval()
 
 # Dummy input — must match model's expected input
-dummy_input = torch.randn(1, 3, 112, 112)
+dummy_input = torch.randn(1, 3, 160, 160)
 
 # Export
 torch.onnx.export(
@@ -728,7 +738,7 @@ print("Model structure valid")
 
 # Check inference produces same output as PyTorch
 session = ort.InferenceSession('face_embedder.onnx')
-test_input = np.random.randn(1, 3, 112, 112).astype(np.float32)
+test_input = np.random.randn(1, 3, 160, 160).astype(np.float32)
 
 # PyTorch output
 with torch.no_grad():
@@ -766,7 +776,7 @@ print(f"Reduction: {fp32_size/int8_size:.1f}x")
 import time
 
 def benchmark_inference(session, n_runs=100):
-    test_input = np.random.randn(1, 3, 112, 112).astype(np.float32)
+    test_input = np.random.randn(1, 3, 160, 160).astype(np.float32)
     input_name = session.get_inputs()[0].name
 
     # Warmup
@@ -801,7 +811,7 @@ Fill this in after running experiments:
 
 | Variant | Size (MB) | LFW EER (%) | Latency mean (ms) | Latency p95 (ms) |
 |---|---|---|---|---|
-| FP32 | TBD | TBD | TBD | TBD |
+| FP32 (baseline) | TBD | TBD | TBD | TBD |
 | INT8 PTQ | TBD | TBD | TBD | TBD |
 | Distilled | TBD | TBD | TBD | TBD |
 
@@ -888,7 +898,7 @@ the user to remove glasses if similarity drops below threshold.
 ### Section: Face Embedding Evaluation
 
 ```
-1. LFW results table (FP32, INT8, Distilled)
+1. LFW results table (baseline, INT8, optional MobileFaceNet)
    - EER per variant
    - Size per variant
    - Latency per variant
