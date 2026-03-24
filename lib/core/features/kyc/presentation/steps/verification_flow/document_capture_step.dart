@@ -4,14 +4,16 @@ import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_mlkit_object_detection/google_mlkit_object_detection.dart';
-import 'package:kyc_verification_app_demo/core/camera/frame_processor.dart';
 import 'package:kyc_verification_app_demo/core/extension/context_extention.dart';
 import 'package:kyc_verification_app_demo/core/ml/quality_model.dart';
+import 'package:kyc_verification_app_demo/core/ml/quality_isolate.dart';
 import 'package:kyc_verification_app_demo/core/theme/app_spacing.dart';
+import 'package:kyc_verification_app_demo/core/utils/logger.dart';
 import 'package:kyc_verification_app_demo/core/utils/toast_utils.dart';
 import 'package:kyc_verification_app_demo/core/utils/image_utils.dart';
 import 'package:kyc_verification_app_demo/core/widget/button_widget.dart';
 import 'package:flutter/services.dart';
+import 'package:kyc_verification_app_demo/core/utils/app_assets.dart';
 
 import '../../../domain/models/kyc_capture_bundle.dart';
 import '../../controllers/document_capture_ui_notifier.dart';
@@ -28,16 +30,29 @@ class DocumentCaptureStep extends ConsumerStatefulWidget {
       _DocumentCaptureStepState();
 }
 
-class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep> {
+class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
+    with WidgetsBindingObserver {
   CameraController? _controller;
   Future<void>? _initializeFuture;
   late final ObjectDetector _objectDetector;
   Timer? _autoCaptureTimer;
   bool _isStreaming = false;
+  bool _isProcessingFrame = false;
+  int _frameCounter = 0;
+  QualityIsolate? _qualityIsolate;
+
+  static const int _minStride = 3;
+  static const int _maxStride = 8;
+  int _frameStride = 5;
+  int _strideAdjustCounter = 0;
+  double _avgInferenceMs = 0;
+  int _inferenceSamples = 0;
+  static const int _logEvery = 30;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _objectDetector = ObjectDetector(
       options: ObjectDetectorOptions(
         mode: DetectionMode.single,
@@ -45,6 +60,8 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep> {
         multipleObjects: false,
       ),
     );
+    _qualityIsolate = QualityIsolate(assetPath: AppAssets.docQualityModel);
+
     _initializeFuture = _initCamera();
   }
 
@@ -57,8 +74,9 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep> {
 
     final controller = CameraController(
       backCamera,
-      ResolutionPreset.high,
+      ResolutionPreset.medium,
       enableAudio: false,
+      imageFormatGroup: ImageFormatGroup.yuv420,
     );
 
     await controller.initialize();
@@ -67,26 +85,82 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep> {
       _controller = controller;
     });
 
+    await _qualityIsolate?.start();
+    if (!mounted) return;
     await _startImageStream();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _autoCaptureTimer?.cancel();
     _controller?.dispose();
     _objectDetector.close();
+    _qualityIsolate?.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (!mounted) return;
+    switch (state) {
+      case AppLifecycleState.resumed:
+        _resumeCamera();
+        break;
+      case AppLifecycleState.inactive:
+      case AppLifecycleState.paused:
+      case AppLifecycleState.detached:
+      case AppLifecycleState.hidden:
+        _pauseCamera();
+        break;
+    }
+  }
+
+  Future<void> _pauseCamera() async {
+    _autoCaptureTimer?.cancel();
+    _isProcessingFrame = false;
+    if (_controller?.value.isStreamingImages ?? false) {
+      await _controller?.stopImageStream();
+      _isStreaming = false;
+    }
+  }
+
+  Future<void> _resumeCamera() async {
+    if (_controller == null || !(_controller?.value.isInitialized ?? false)) {
+      _initializeFuture = _initCamera();
+      return;
+    }
+    if (!_isStreaming) {
+      await _startImageStream();
+    }
   }
 
   Future<void> _startImageStream() async {
     if (_controller == null || _isStreaming) return;
-    await _controller!.startImageStream((cameraImage) async {
+    await _controller!.startImageStream((cameraImage) {
       if (!mounted) return;
-      final frame = FrameProcessor.convert(cameraImage);
-      if (frame == null) return;
+      _frameCounter++;
+      if (_frameCounter % _frameStride != 0) return;
+      if (_isProcessingFrame) return;
 
-      final quality = await QualityModel.predictFromImage(frame);
+      _isProcessingFrame = true;
+      final payload = _qualityIsolate?.buildPayload(cameraImage);
+      if (payload == null) {
+        _isProcessingFrame = false;
+        return;
+      }
+      unawaited(_processPayload(payload));
+    });
+    _isStreaming = true;
+  }
+
+  Future<void> _processPayload(Map<String, Object?> payload) async {
+    final stopwatch = Stopwatch()..start();
+    try {
+      final probs = await _qualityIsolate?.predictPayload(payload);
       if (!mounted) return;
+      if (probs == null) return;
+      final quality = QualityModel.fromProbabilities(probs);
 
       ref.read(documentCaptureUiProvider.notifier).updateQuality(
             message: quality.message,
@@ -95,8 +169,46 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep> {
           );
 
       _handleAutoCapture(quality.isGood);
-    });
-    _isStreaming = true;
+      _recordInference(
+        stopwatch.elapsedMicroseconds / 1000,
+        quality: quality,
+      );
+    } on TimeoutException {
+      if (!mounted) return;
+    } catch (e) {
+      if (!mounted) return;
+    } finally {
+      _isProcessingFrame = false;
+    }
+  }
+
+  void _recordInference(double ms, {QualityResult? quality}) {
+    _inferenceSamples++;
+    _avgInferenceMs =
+        ((_avgInferenceMs * (_inferenceSamples - 1)) + ms) / _inferenceSamples;
+
+    _strideAdjustCounter++;
+    if (_strideAdjustCounter >= 10) {
+      if (_avgInferenceMs > 80 && _frameStride < _maxStride) {
+        _frameStride++;
+      } else if (_avgInferenceMs < 40 && _frameStride > _minStride) {
+        _frameStride--;
+      }
+      _strideAdjustCounter = 0;
+    }
+
+    if (_inferenceSamples % _logEvery == 0) {
+      logPrint(
+        'DocQuality avg inference: ${_avgInferenceMs.toStringAsFixed(1)}ms '
+        '(stride=$_frameStride)',
+      );
+      if (quality != null) {
+        logPrint(
+          'DocQuality last: ${quality.quality} '
+          'conf=${(quality.confidence * 100).toStringAsFixed(1)}%',
+        );
+      }
+    }
   }
 
   void _handleAutoCapture(bool isGood) {
@@ -200,11 +312,6 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep> {
               const SizedBox(height: AppSpacing.s8),
               _buildErrorBanner(context, uiState.errorMessage ?? ''),
             ],
-            const SizedBox(height: AppSpacing.s8),
-            Text(
-              'Confidence: ${(uiState.qualityConfidence * 100).toStringAsFixed(0)}%',
-              style: context.textTheme.bodySmall,
-            ),
             const SizedBox(height: AppSpacing.s16),
             Expanded(
               child: ClipRRect(
