@@ -31,6 +31,27 @@ Quality always runs first. No point running OCR on a blurry image.
 | Field Extraction | ✅ Write regex rules | — |
 | MRZ Parser | ✅ Write parser (or use library) | python-mrz library |
 
+Note on synthetic data for quality:
+- Use template-based layouts to avoid unrealistic "random text on a rectangle"
+- Gate `GOOD` samples with image-quality metrics (sharpness/contrast/noise)
+
+---
+
+## Field Extraction Without a Layout Model
+
+Use rules based on MRZ, labels, and regex. This avoids a learned layout extractor.
+
+Order of operations:
+1. **MRZ-first** (NIMC smart card): parse MRZ and trust those fields.
+2. **Label mapping** (laminated NIN): find label lines (e.g., `SURNAME`, `DOB`) and
+   read the value on the same line or the next line.
+3. **Regex fallback** (old slip): extract NIN as 11 digits and dates by pattern order.
+
+Reference implementation:
+- `scripts/field_extraction.py` provides `extract_fields()` for:
+  `nimc_smart`, `nin_laminated`, `nimc_slip`,
+  `nigeria_voters_card`, `nigeria_drivers_license`, and `auto`.
+
 ---
 
 ## Edge Case 1 — Perspective Warp Corner Problems

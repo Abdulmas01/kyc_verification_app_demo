@@ -695,6 +695,8 @@ Modification for this task:
 Training strategy:
 - Transfer learning: freeze early layers, fine-tune last 2 blocks + classification head
 - Dataset: synthetic augmented document images with controlled quality labels
+  - Template-based layouts (fixed field positions) to reduce unrealistic samples
+  - `GOOD` samples are gated by image-quality metrics (sharpness/contrast/noise)
 
 ### Why Not a Larger Model?
 
