@@ -29,16 +29,17 @@ Required artifacts in Drive (`MyDrive/kyc_thesis/experiments/face/<run_id>/`):
 - `progress.json`
 - `reports/per_seed_metrics.csv`
 - `reports/summary_mean_std.csv`
-- `reports/summary_ci95.csv`
-- `reports/significance_paired_bootstrap.csv`
 - `reports/eer_variant_bar.png`
 - `exports/face_embedder_fp32.onnx`
 - Optional benchmark export: `exports/face_embedder.tflite` (if mobile benchmark track is enabled)
+- Optional final-thesis stats export: `reports/summary_ci95.csv`
+- Optional final-thesis stats export: `reports/significance_paired_bootstrap.csv`
 
 Checks:
-- [ ] Multi-seed metrics exist (`SEEDS=[42,43,44]` by default).
+- [ ] Default progress mode run completed (single-seed is acceptable).
 - [ ] FP32 vs INT8 present; Distilled present if training/checkpoint enabled.
 - [ ] EER, AUC, latency, size tracked per variant.
+- [ ] If `RUN_ADVANCED_STATS=True`, CI and significance files are present.
 
 ## C) Liveness (KYC_03)
 Expected source notebook:
@@ -48,16 +49,17 @@ Required artifacts in Drive (`MyDrive/kyc_thesis/experiments/liveness/<run_id>/`
 - `progress.json`
 - `reports/per_seed_metrics.csv`
 - `reports/summary_mean_std.csv`
-- `reports/summary_ci95.csv`
-- `reports/significance_mcnemar.csv`
 - `reports/acer_variant_bar.png`
 - `exports/liveness_fp32.onnx`
 - Optional benchmark export: `exports/liveness.tflite` (if mobile benchmark track is enabled)
+- Optional final-thesis stats export: `reports/summary_ci95.csv`
+- Optional final-thesis stats export: `reports/significance_mcnemar.csv`
 
 Checks:
 - [ ] CelebA-Spoof split used as baseline (`train/val/test`).
 - [ ] APCER, BPCER, ACER, AUC recorded.
-- [ ] Multi-seed mean ± std and CI exported.
+- [ ] Default progress mode run completed (single-seed is acceptable).
+- [ ] If `RUN_ADVANCED_STATS=True`, CI and significance files are present.
 
 ## D) Global Matrix + Traceability
 Required file:
