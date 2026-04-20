@@ -88,7 +88,9 @@ kyc_flutter/
 │   │
 │   ├── assets/
 │   │   └── models/
-│   │       └── doc_quality.tflite      # From Document 1 exports (thesis canonical)
+│   │       ├── doc_quality.tflite      # Required (UX pre-screening)
+│   │       ├── face_embedder.tflite    # Optional experimental benchmark (non-authoritative)
+│   │       └── liveness.tflite         # Optional experimental benchmark (non-authoritative)
 │   │
 │   ├── android/
 │   │   └── app/src/main/AndroidManifest.xml
@@ -154,6 +156,9 @@ dev_dependencies:
 flutter:
   assets:
     - assets/models/doc_quality.tflite
+    # Optional benchmark-only assets:
+    # - assets/models/face_embedder.tflite
+    # - assets/models/liveness.tflite
 ```
 
 ---
@@ -177,7 +182,7 @@ flutter:
 
 ## Step 3 — ML Model Loader
 
-Load the document-quality TFLite model once at app startup. In thesis canonical mode, face embedding and liveness are server-authoritative and not loaded on-device.
+Load the document-quality TFLite model once at app startup. In thesis canonical mode, face embedding and liveness remain server-authoritative. If you run experimental mobile-vs-backend benchmarking, face/liveness TFLite can be loaded under a feature flag and treated as non-authoritative.
 
 ```dart
 // lib/core/ml/model_loader.dart

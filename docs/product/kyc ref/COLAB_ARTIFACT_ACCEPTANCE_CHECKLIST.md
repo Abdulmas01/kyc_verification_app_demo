@@ -33,6 +33,7 @@ Required artifacts in Drive (`MyDrive/kyc_thesis/experiments/face/<run_id>/`):
 - `reports/significance_paired_bootstrap.csv`
 - `reports/eer_variant_bar.png`
 - `exports/face_embedder_fp32.onnx`
+- Optional benchmark export: `exports/face_embedder.tflite` (if mobile benchmark track is enabled)
 
 Checks:
 - [ ] Multi-seed metrics exist (`SEEDS=[42,43,44]` by default).
@@ -51,6 +52,7 @@ Required artifacts in Drive (`MyDrive/kyc_thesis/experiments/liveness/<run_id>/`
 - `reports/significance_mcnemar.csv`
 - `reports/acer_variant_bar.png`
 - `exports/liveness_fp32.onnx`
+- Optional benchmark export: `exports/liveness.tflite` (if mobile benchmark track is enabled)
 
 Checks:
 - [ ] CelebA-Spoof split used as baseline (`train/val/test`).
@@ -65,3 +67,21 @@ Checks:
 - [ ] New rows appended for each completed variant.
 - [ ] Each row includes `artifact_path` pointing to run folder.
 - [ ] `run_id` in matrix matches `progress.json` in artifact folder.
+
+## E) Mobile vs Backend Comparison (Objective-Closure Track)
+Required report artifact:
+- `MyDrive/kyc_thesis/reports/mobile_backend_comparison.csv`
+
+Required columns:
+- `session_id`
+- `mobile_face_score`, `backend_face_score`
+- `mobile_liveness_score`, `backend_liveness_score`
+- `backend_decision`, `mobile_shadow_decision`
+- `face_abs_diff`, `liveness_abs_diff`
+- `mobile_total_latency_ms`, `backend_roundtrip_ms`
+
+Checks:
+- [ ] At least one benchmark batch (recommended >= 100 sessions) recorded.
+- [ ] Disagreement rate computed and reported.
+- [ ] Latency comparison (mobile vs backend) reported.
+- [ ] Final write-up explicitly states backend remained authoritative throughout.

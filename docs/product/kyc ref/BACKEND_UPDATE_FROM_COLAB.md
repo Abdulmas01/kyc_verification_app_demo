@@ -37,3 +37,15 @@ Optional for benchmarking/ablation:
 - Flutter uses `assets/models/doc_quality.tflite` for UX pre-screening.
 - Backend remains authoritative for face and liveness decisions.
 - Ensure model/version metadata shown in logs matches current Colab run IDs.
+
+## 6) Mobile-vs-Backend Benchmark Protocol (Non-Authoritative Mobile Track)
+1. Add optional shadow inference path in Flutter for `face_embedder.tflite` and `liveness.tflite` behind a feature flag.
+2. For each test session, send mobile shadow scores alongside normal upload metadata (do not use them for decision).
+3. Persist a comparison record per session:
+   - mobile vs backend face score
+   - mobile vs backend liveness score
+   - absolute differences
+   - mobile latency and backend round-trip latency
+4. Produce `mobile_backend_comparison.csv` in Drive reports and compute disagreement rate.
+
+This protocol directly addresses the supervisor concern about incomplete objective evidence by adding measurable cross-environment validation while preserving the server-authoritative thesis architecture.

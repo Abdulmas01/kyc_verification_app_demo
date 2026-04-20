@@ -1,0 +1,1 @@
+session_id,mobile_face_score,backend_face_score,mobile_liveness_score,backend_liveness_score,face_abs_diff,liveness_abs_diff,mobile_shadow_decision,backend_decision,mobile_total_latency_ms,backend_roundtrip_ms,notes
