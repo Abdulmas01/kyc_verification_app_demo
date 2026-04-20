@@ -1,3 +1,5 @@
+Status: Execution Plan
+
 # KYC Thesis — Document 1: AI Training Pipeline
 ## Build-Ready Implementation Plan
 
@@ -107,7 +109,7 @@ kyc-ml/
 
 ## Phase 1 — Synthetic Dataset Generator
 
-**Goal:** Generate 20,000 synthetic ID document images with ground truth labels.
+**Goal:** Generate 5,000 synthetic ID document images with ground truth labels (canonical thesis baseline).
 **Why first:** Every other model needs this data. Build this before training anything.
 
 ### What the Generator Produces
@@ -207,7 +209,7 @@ def render_document(template_name, identity, output_path):
     Image.fromarray(augmented).save(output_path)
     return bboxes
 
-def generate_dataset(n=20000, output_dir="data/synthetic"):
+def generate_dataset(n=5000, output_dir="data/synthetic"):
     Path(f"{output_dir}/documents").mkdir(parents=True, exist_ok=True)
     Path(f"{output_dir}/labels").mkdir(parents=True, exist_ok=True)
 
@@ -232,7 +234,7 @@ def generate_dataset(n=20000, output_dir="data/synthetic"):
             print(f"Generated {i}/{n}")
 
 if __name__ == "__main__":
-    generate_dataset(n=20000)
+    generate_dataset(n=5000)
 ```
 
 **Run this once. Takes ~30 minutes. You now have your training data.**
@@ -430,16 +432,15 @@ There is no train/val split because the model is pretrained and not fine‑tuned
 ### Why Single-Frame Passive (Not Temporal)
 
 - Temporal 3D CNN = 3–5× more training complexity, marginal accuracy gain on standard datasets
-- Single-frame passive CNN on OULU-NPU achieves ACER ~5–8% which is publishable
+- Single-frame passive CNN on CelebA-Spoof provides a practical thesis baseline without temporal-model complexity
 - Simpler to debug, export, and explain in thesis
 
 ### Dataset
 
-**OULU-NPU** — the standard academic liveness benchmark:
-- Download: https://sites.google.com/site/oulunpudatabase/
-- 4 attack protocols (print, replay, high-quality print, high-quality replay)
-- ~5,000 real + ~5,000 spoof video clips
-- Extract frames at 3fps → ~300,000 total frames
+**CelebA-Spoof** — canonical thesis liveness baseline:
+- Large-scale spoof/liveness dataset with rich annotations
+- Used as the primary training and reporting baseline in this thesis track
+- OULU-NPU and CASIA-FASD may be added only as supplementary benchmarks
 
 ```python
 # Data preparation
@@ -551,7 +552,7 @@ def evaluate_liveness(model, dataloader):
 ```
 
 **Expected training time:** 4–6 hours on Colab T4.
-**Expected ACER:** 5–12% on OULU-NPU Protocol 1 — publishable.
+**Expected ACER:** report on CelebA-Spoof validation split; treat OULU/CASIA as optional supplementary benchmarks if completed.
 
 ---
 

@@ -1,3 +1,5 @@
+Status: Execution Plan
+
 # Flutter Sprint Plan (Milestone-Based)
 
 Purpose: keep implementation focused, complete, and edge‑case aware.

@@ -1,3 +1,5 @@
+Status: Execution Plan
+
 # KYC Thesis — Document 2: Backend Implementation Plan
 ## Django + Django REST Framework + PostgreSQL
 
@@ -215,7 +217,7 @@ class VerificationSession(models.Model):
     session_token  = models.CharField(max_length=64, unique=True, db_index=True)
     api_key        = models.ForeignKey("accounts.APIKey", on_delete=models.SET_NULL, null=True)
 
-    # AI Signals (from mobile device)
+    # AI Signals (authoritative server inference outputs + mobile metadata where applicable)
     face_similarity     = models.FloatField(null=True)
     liveness_score      = models.FloatField(null=True)
     ocr_confidence      = models.FloatField(null=True)

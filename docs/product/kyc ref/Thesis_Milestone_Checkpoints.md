@@ -1,3 +1,5 @@
+Status: Execution Plan
+
 # Thesis Milestone Checkpoints
 ## KYC AI Verification System — Master's Thesis Progress Tracker
 
@@ -151,8 +153,8 @@ Answer these before writing a single line of code:
 - [ ] Google Colab account created, T4 GPU confirmed working
 - [ ] Google Drive mounted and test checkpoint saved successfully
 - [ ] CelebA-Spoof download started (5GB — start it now, it takes time)
-- [ ] CASIA-FASD registration submitted
-- [ ] OULU-NPU application submitted (10 minutes — do it now)
+- [ ] Optional: CASIA-FASD registration submitted (supplementary benchmark only)
+- [ ] Optional: OULU-NPU application submitted (supplementary benchmark only)
 - [ ] Physical Android device available for Flutter testing
 - [ ] Supervisor meeting booked to confirm thesis direction
 - [ ] Thesis submission deadline confirmed: _______________
@@ -338,9 +340,9 @@ They will block you later at the worst possible time.
 ### What you are building
 - CelebA-Spoof dataset preprocessed and split
 - MobileNetV2 fine-tuned for binary live/spoof classification
-- APCER, BPCER, ACER calculated on CASIA-FASD test set
+- APCER, BPCER, ACER calculated on the CelebA-Spoof validation/test split
 - ROC curve plotted and saved
-- If OULU-NPU access arrived — additional evaluation on Protocol 1 and 2
+- Optional supplementary: CASIA-FASD and/or OULU-NPU evaluation if completed
 - Compression study: FP32 + INT8 + Distilled variants
 - ONNX export: liveness.onnx saved
 
@@ -349,13 +351,13 @@ They will block you later at the worst possible time.
 ### Criteria — Did it work?
 
 **Green — Achieved**
-- ACER ≤ 12% on CASIA-FASD
+- ACER ≤ 12% on CelebA-Spoof validation/test split
 - INT8 ACER increase ≤ 5pp
 - ONNX export works
 - Training converged (loss curve shows clear decrease)
 
 **Yellow — Partial, continue with caution**
-- ACER 12–20% on CASIA-FASD
+- ACER 12–20% on CelebA-Spoof validation/test split
 - Model shows clear learning (better than random 50%) but not hitting target
 - INT8 drop > 5pp
 - TFLite export fails but ONNX works
@@ -368,8 +370,8 @@ They will block you later at the worst possible time.
 ---
 
 ### What to say if Green
-> "Liveness detection trained on CelebA-Spoof achieved ACER [X]% on
-> CASIA-FASD, within the target range for a mobile-optimised passive
+> "Liveness detection trained on CelebA-Spoof achieved ACER [X]% on the
+> CelebA-Spoof validation/test split, within the target range for a mobile-optimised passive
 > liveness detector. APCER of [X]% and BPCER of [X]% indicate the
 > model's operating point balances attack resistance against user
 > experience. Combined with active challenge-response via ML Kit,
@@ -379,9 +381,9 @@ They will block you later at the worst possible time.
 ---
 
 ### What to say if Yellow (ACER 12–20%)
-> "Liveness detection achieved ACER [X]% on CASIA-FASD. While above
+> "Liveness detection achieved ACER [X]% on the CelebA-Spoof validation/test split. While above
 > the target of 12%, this result reflects the domain gap between
-> CelebA-Spoof training data and CASIA-FASD test conditions —
+> training conditions and deployment conditions —
 > a known challenge in anti-spoofing research where cross-dataset
 > generalisation typically degrades performance by 5–15pp. The active
 > challenge-response component (blink + head turn via ML Kit) provides
@@ -394,17 +396,17 @@ They will block you later at the worst possible time.
 ### What to do if Red
 1. Check class balance — print spoof vs live counts in training split
 2. Verify augmentation is not destroying spoof texture cues
-3. Try training on CASIA-FASD only (smaller, cleaner) for first 5 epochs
+3. Try a reduced CelebA-Spoof subset for first 5 epochs to verify learning signal
 4. Check learning rate — liveness is more sensitive, try 5e-5
 5. Come back to Claude with: loss curve + APCER/BPCER breakdown by attack type
 
 ---
 
 ### Checkpoint questions
-- ACER on CASIA-FASD? ____%
+- ACER on CelebA-Spoof validation/test split? ____%
 - APCER? ____% BPCER? ____%
-- Did OULU-NPU access arrive? Yes / No
-- If yes — ACER on OULU-NPU Protocol 1? ____%
+- Optional supplementary benchmark run completed? Yes / No
+- If yes — benchmark dataset and ACER: ____
 - INT8 ACER increase? ____pp
 - Did ONNX export work? Yes / No
 - Weeks spent on this milestone: ____

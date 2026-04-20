@@ -1,3 +1,5 @@
+Status: Archived/Deprecated
+
 # VERYDENT Product Specification
 ## AI-Powered KYC Verification for Emerging Markets
 **Version 1.0 · Pre-seed / Thesis-to-Product · 2026**

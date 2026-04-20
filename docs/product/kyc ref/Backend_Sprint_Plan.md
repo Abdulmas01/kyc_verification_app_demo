@@ -1,3 +1,5 @@
+Status: Execution Plan
+
 # Backend Sprint Plan (Milestone-Based)
 
 Purpose: keep backend implementation aligned with the thesis scope and avoid reliability issues (memory, timeouts, queues).

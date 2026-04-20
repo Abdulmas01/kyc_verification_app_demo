@@ -1,3 +1,5 @@
+Status: Execution Plan
+
 # Face Embedding Pipeline
 ## KYC Thesis — Face Embedding, LFW Evaluation, ONNX Export, Edge Cases
 

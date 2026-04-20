@@ -1,3 +1,5 @@
+Status: Execution Plan
+
 # Document Normalization Strategy (Thesis vs Production)
 
 This document explains the **current best option for the thesis** and how to

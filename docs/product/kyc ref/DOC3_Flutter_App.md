@@ -1,3 +1,5 @@
+Status: Execution Plan
+
 # KYC Thesis — Document 3: Flutter Mobile App
 ## Build-Ready Implementation Plan
 
@@ -86,9 +88,7 @@ kyc_flutter/
 │   │
 │   ├── assets/
 │   │   └── models/
-│   │       ├── doc_quality.tflite      # From Document 1 exports
-│   │       ├── face_embedder.tflite
-│   │       └── liveness.tflite
+│   │       └── doc_quality.tflite      # From Document 1 exports (thesis canonical)
 │   │
 │   ├── android/
 │   │   └── app/src/main/AndroidManifest.xml
@@ -154,8 +154,6 @@ dev_dependencies:
 flutter:
   assets:
     - assets/models/doc_quality.tflite
-    - assets/models/face_embedder.tflite
-    - assets/models/liveness.tflite
 ```
 
 ---
@@ -179,7 +177,7 @@ flutter:
 
 ## Step 3 — ML Model Loader
 
-Load all TFLite models once at app startup. Same pattern as Django's `apps.py`.
+Load the document-quality TFLite model once at app startup. In thesis canonical mode, face embedding and liveness are server-authoritative and not loaded on-device.
 
 ```dart
 // lib/core/ml/model_loader.dart
@@ -189,8 +187,6 @@ import 'package:flutter/services.dart';
 
 class ModelLoader {
   static Interpreter? _qualityModel;
-  static Interpreter? _faceModel;
-  static Interpreter? _livenessModel;
 
   static bool _loaded = false;
 
@@ -203,14 +199,6 @@ class ModelLoader {
       'assets/models/doc_quality.tflite',
       options: options,
     );
-    _faceModel = await Interpreter.fromAsset(
-      'assets/models/face_embedder.tflite',
-      options: options,
-    );
-    _livenessModel = await Interpreter.fromAsset(
-      'assets/models/liveness.tflite',
-      options: options,
-    );
 
     _loaded = true;
   }
@@ -220,8 +208,6 @@ class ModelLoader {
     return _qualityModel!;
   }
 
-  static Interpreter get faceModel => _faceModel!;
-  static Interpreter get livenessModel => _livenessModel!;
 }
 ```
 

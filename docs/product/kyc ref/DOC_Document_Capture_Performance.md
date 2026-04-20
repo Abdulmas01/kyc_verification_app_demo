@@ -1,3 +1,5 @@
+Status: Execution Plan
+
 # Document Capture Performance Notes
 
 ## Why we changed the camera pipeline

@@ -1,3 +1,5 @@
+Status: Execution Plan
+
 # Document Processing Pipeline
 ## KYC Thesis — OCR, Field Extraction, Edge Cases and Solutions
 

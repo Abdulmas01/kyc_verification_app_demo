@@ -1,3 +1,5 @@
+Status: Execution Plan
+
 # Document Capture Troubleshooting Guide
 
 This guide summarizes what was changed in the document capture pipeline, how

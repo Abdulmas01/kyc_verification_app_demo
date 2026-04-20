@@ -1,3 +1,5 @@
+Status: Thesis Canonical
+
 # AI-Based Automated KYC Verification System
 ## Master of Science in Artificial Intelligence — Thesis Project Specification
 
@@ -12,7 +14,7 @@ Know Your Customer (KYC) verification is a mandatory identity authentication pro
 This thesis investigates the design, training, and optimization of a **multi-model deep learning pipeline** that performs automated KYC verification entirely from mobile inputs. The central AI research questions are:
 
 1. Can lightweight neural networks, optimized for mobile inference, match the accuracy of full-size models for document verification and biometric matching tasks?
-2. What is the accuracy-efficiency tradeoff across quantization, pruning, and knowledge distillation for each biometric sub-task?
+2. What is the accuracy-efficiency tradeoff across post-training INT8 quantization and knowledge distillation for each biometric sub-task?
 3. How robust are deep learning-based liveness detection models against spoofing attacks, including passive (texture-based) and active (challenge-response) signal fusion?
 4. Can a probabilistic risk calibration model outperform a hand-engineered weighted scoring function for multi-signal identity decision making?
 
@@ -22,11 +24,11 @@ This thesis makes the following original AI contributions:
 
 1. **Mobile-optimized biometric pipeline** — a system of task-specialized lightweight neural networks covering document quality assessment, face embedding, and liveness detection, each trained, compressed, and benchmarked for mobile-CPU inference on mid-range Android devices.
 
-2. **Synthetic identity document dataset** — a programmatically generated training corpus of 20,000–50,000 annotated identity documents with controlled augmentation, enabling supervised training without real personal data.
+2. **Synthetic identity document dataset** — a programmatically generated training corpus of 5,000 annotated identity documents (70/15/15 split) with controlled augmentation, enabling supervised training without real personal data.
 
 3. **Compression study: PTQ and knowledge distillation across biometric tasks** — a systematic empirical comparison of post-training INT8 quantization and knowledge distillation applied to each biometric model, producing concrete accuracy–latency–size tradeoff curves. Different biometric tasks exhibit fundamentally different sensitivity to quantization — this per-task analysis is the core empirical contribution.
 
-4. **Passive liveness detection with optional active challenge UX** — a MobileNetV2 classifier trained on OULU-NPU for texture-based anti-spoofing (print, screen, and video replay attacks), with ML Kit challenge-response used for capture guidance only (not part of the authoritative decision).
+4. **Passive liveness detection with optional active challenge UX** — a MobileNetV2 classifier fine-tuned on CelebA-Spoof for texture-based anti-spoofing, with ML Kit challenge-response used for capture guidance only (not part of the authoritative decision). OULU-NPU/CASIA-FASD are treated as optional supplementary evaluation benchmarks.
 
 5. **Calibrated probabilistic decision engine** — a systematic comparison of a hand-engineered weighted scoring formula (baseline) against learned calibration models (logistic regression and XGBoost with isotonic calibration), evaluated using calibration-specific metrics (ECE, Brier score) that are standard in probabilistic ML but rarely applied to KYC decision engine literature.
 
@@ -400,11 +402,11 @@ For research quality training:
 
 Document dataset target:
 
-20,000 – 50,000 synthetic IDs
+5,000 synthetic IDs (canonical thesis baseline)
 
 Augmented dataset:
 
-200,000+ samples after augmentation
+Controlled per-class augmentation with fixed 70/15/15 split tracking for reproducibility
 
 ---
 
@@ -891,7 +893,7 @@ Challenge success is recorded as `challenge_success` for UX feedback and capture
 A (2+1)D temporal CNN branch (factorised spatial + temporal convolutions over video sequences) was evaluated during the design phase. It was not adopted because:
 - Implementation complexity is significantly higher than the accuracy gain justifies
 - Training on video sequences requires substantially more GPU time and complex data loading
-- Accuracy improvement on OULU-NPU is marginal (3–8% ACER) relative to the passive CNN baseline
+- Accuracy improvement from adding a temporal branch is marginal relative to the passive CNN baseline used in this thesis
 - Active challenge-response via ML Kit improves capture quality without a second model, while keeping the decision path server-authoritative
 
 ### Loss Function
@@ -906,31 +908,17 @@ Where `w_live` and `w_spoof` are set based on class frequency in the training sp
 
 ### Training Dataset
 
-**Primary training dataset: CelebA-Spoof**
+**Primary training and thesis baseline dataset: CelebA-Spoof**
 
-- 625,537 images across 10 spoof attack types (print, replay, partial, 3D mask, and more)
+- 625,537 images across multiple spoof attack types
 - Rich annotations including spoof type, illumination, environment, and sensor metadata
-- License: Creative Commons Attribution 4.0 (CC BY 4.0) — permits commercial use with attribution
-- Immediate download via GitHub release — no institutional access application required
-- Larger and more attack-type-diverse than OULU-NPU; well-suited for MobileNetV2 fine-tuning
+- License: Creative Commons Attribution 4.0 (CC BY 4.0)
+- Canonical thesis baseline for liveness training and primary reporting
 
-**Primary evaluation benchmark: CASIA-FASD**
+**Optional supplementary evaluation (if completed and explicitly reported):**
 
-- 600 video clips, 3 attack types (printed photo, video replay, cut photo)
-- Widely cited in the anti-spoofing literature — ACER on CASIA-FASD is directly comparable to published results
-- Free registration download — no waiting period
-- Used for test set evaluation only (not training), ensuring clean train/test separation
-
-**Secondary evaluation benchmark: OULU-NPU (conditional)**
-
-- 4 attack protocols covering print and video replay under varied mobile capture conditions
-- Gold standard for mobile liveness benchmarking — enables direct comparison with the widest range of published work
-- Access requires a formal application to the University of Oulu (processing time 1–3 weeks)
-- OULU-NPU access has been formally requested. If access is received before thesis submission, evaluation results on OULU-NPU Protocol 1 and Protocol 2 are included as a supplementary benchmark. If access is not received, CASIA-FASD results constitute the primary evaluation and OULU-NPU is noted as future work.
-
-**Dataset licensing note for commercial continuity**
-
-CelebA-Spoof (CC BY 4.0) is the only training dataset in this project with an explicit commercial use licence. Model weights trained exclusively on CelebA-Spoof are commercially deployable. Model weights trained on OULU-NPU or CASIA-FASD are for academic evaluation only. The production-deployable checkpoint is trained on CelebA-Spoof only; CASIA-FASD and OULU-NPU are used for evaluation and comparison, not training data augmentation.
+- CASIA-FASD and OULU-NPU may be used as additional benchmarks
+- These are not the canonical baseline for thesis liveness claims unless results are completed and reported in the final results chapter
 
 ### Liveness Evaluation Metrics
 
@@ -940,7 +928,7 @@ Per ISO/IEC 30107-3 standard:
 - **ACER** = (APCER + BPCER) / 2 — primary headline metric
 - ROC curve across classification thresholds
 
-Expected result on OULU-NPU Protocol 1: ACER 5–12% with MobileNetV2 fine-tuning.
+If supplementary OULU-NPU benchmarking is completed, expected ACER on Protocol 1 is 5–12% with MobileNetV2 fine-tuning.
 
 ---
 
@@ -987,7 +975,7 @@ All models start from pretrained weights — no model is trained from scratch:
 | Doc Quality (MobileNetV3-Small) | ImageNet-1K (timm) | Freeze early blocks, fine-tune last 2 + head |
 | Doc Detector (MobileNetV2 + FPN) | COCO object detection | Fine-tune FPN + regression head |
 | MobileFaceNet | VGGFace2 (facenet-pytorch) | Use directly, fine-tune head if needed |
-| Liveness (MobileNetV2) | ImageNet-1K (timm) | Full fine-tune at low LR on OULU-NPU |
+| Liveness (MobileNetV2) | ImageNet-1K (timm) | Full fine-tune at low LR on CelebA-Spoof |
 
 **Note on face embedding:** The pretrained VGGFace2 weights from `facenet-pytorch` are used directly. Training a face embedding model from scratch requires millions of face images with identity labels and weeks of GPU time — well beyond the scope of this thesis. Using pretrained weights is standard academic practice for this task.
 
@@ -1029,7 +1017,7 @@ transforms = [
 
 ### Liveness Detection Augmentation
 
-Frame-level augmentation applied to OULU-NPU frames:
+Frame-level augmentation applied to CelebA-Spoof training frames:
 - Random brightness and contrast jitter (simulate lighting variation)
 - Horizontal flip (mirror face)
 - Gaussian noise (sensor noise simulation)
@@ -1122,7 +1110,7 @@ Three models are compressed and benchmarked:
 |-------|-------------|------|--------------------------|
 | Doc Quality | MobileNetV3-Small FP32 | 5-class classification | Top-1 Accuracy |
 | Face Embedding | MobileFaceNet FP32 | Metric learning | EER on LFW |
-| Liveness | MobileNetV2 FP32 | Binary classification | ACER on OULU-NPU |
+| Liveness | MobileNetV2 FP32 | Binary classification | ACER on CelebA-Spoof validation split (supplementary benchmarks optional) |
 
 Each baseline produces the reference measurement: model size (MB), inference latency (ms on mid-range Android CPU), peak memory usage (MB), and task accuracy.
 
@@ -1510,8 +1498,9 @@ Face datasets
 
 Liveness datasets
 
-- OULU-NPU
-- CASIA-FASD
+- CelebA-Spoof (primary baseline)
+- OULU-NPU (optional supplementary benchmark)
+- CASIA-FASD (optional supplementary benchmark)
 
 These datasets allow benchmarking against established academic metrics.
 
@@ -2456,13 +2445,13 @@ This thesis makes the following **original contributions to the AI research lite
 
 ### Contribution 1 — Per-Task Compression Sensitivity Study
 
-Existing compression studies apply quantization and distillation to image classification benchmarks. This thesis applies INT8 PTQ and knowledge distillation across three distinct biometric tasks — document quality classification, face embedding, and liveness detection — and measures task-specific accuracy sensitivity to each technique.
+Existing compression studies apply quantization and distillation to image classification benchmarks. This thesis applies INT8 PTQ and knowledge distillation across three distinct biometric tasks — document quality classification, face embedding, and liveness detection — and measures task-specific accuracy sensitivity to each technique. At this stage, completed evidence exists for document-quality compression; face and liveness compression results are explicitly in progress until final experiments are reported.
 
 **Why this is novel:** Face embedding quality is highly sensitive to INT8 precision loss because angular margin distances are small. Document quality classification is largely robust. This per-task sensitivity analysis has not been systematically published for a complete mobile KYC pipeline.
 
 ### Contribution 2 — Passive Liveness CNN (with optional Active Challenge UX)
 
-The liveness system uses a MobileNetV2 binary classifier trained on OULU-NPU for passive texture-based anti-spoofing. Active challenge-response (blink, head-turn) via ML Kit is used for **UX gating** and capture quality, but is **not** part of the authoritative decision in the thesis prototype.
+The liveness system uses a MobileNetV2 binary classifier fine-tuned on CelebA-Spoof for passive texture-based anti-spoofing. Active challenge-response (blink, head-turn) via ML Kit is used for **UX gating** and capture quality, but is **not** part of the authoritative decision in the thesis prototype.
 
 **Why this is novel:** The thesis provides a clear, reproducible passive liveness benchmark on mobile-optimized models and documents the tradeoffs of keeping active challenges out of the authoritative decision path for simplicity and reproducibility.
 

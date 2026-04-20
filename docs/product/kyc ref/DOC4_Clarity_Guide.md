@@ -1,3 +1,5 @@
+Status: Thesis Canonical
+
 # KYC Thesis — Document 4: Clarity Guide
 ## What We Are Building, Why, and Every Decision Explained
 
@@ -226,7 +228,7 @@ We dropped the temporal branch because:
 - (2+1)D temporal convolutions are complex to implement and debug
 - Training on video sequences requires much more GPU time
 - The accuracy gain is marginal on standard benchmarks
-- A single-frame passive CNN on OULU-NPU achieves ACER of 5–12% — publishable
+- A single-frame passive CNN fine-tuned on CelebA-Spoof gives a practical thesis baseline with publishable error rates
 
 Instead, we add active liveness through the Flutter app for UX guidance:
 - Ask the user to blink
@@ -237,10 +239,10 @@ This hybrid passive (CNN model) + active (ML Kit challenge) approach is
 simpler to implement, but only the passive model is authoritative.
 
 ### The dataset
-OULU-NPU is the standard academic benchmark for liveness detection.
-It contains video recordings of real users and spoof attacks (print, replay)
-captured on mobile phones. Using this dataset means our results are directly
-comparable to published papers — important for thesis credibility.
+CelebA-Spoof is the canonical thesis baseline dataset for liveness.
+It contains large-scale spoof and live samples with rich annotations and is the
+official baseline used for training and primary reporting in this project.
+OULU-NPU and CASIA-FASD are optional supplementary benchmarks when available.
 
 ---
 
@@ -374,9 +376,9 @@ Formula: (APCER + BPCER) / 2
 This is the headline metric for liveness — one number that balances both
 error types. Lower is better. Target: ACER < 0.10 (10%).
 
-Published state-of-the-art on OULU-NPU Protocol 1 is around 1–3% ACER.
-With a simple MobileNet fine-tune you should reach 5–12% ACER — that range
-is acceptable and publishable for a master's thesis.
+With a MobileNetV2 fine-tune on CelebA-Spoof, ACER in the low double-digit
+range can still be acceptable for a master's thesis baseline, provided the
+limitations and domain-gap implications are reported transparently.
 
 ---
 
@@ -684,7 +686,7 @@ resistant to high-quality video replay attacks.
   but not enough to justify the implementation complexity for a thesis.
 
 ### What we do instead
-Single-frame passive CNN (MobileNetV2 fine-tuned on OULU-NPU) for the model.
+Single-frame passive CNN (MobileNetV2 fine-tuned on CelebA-Spoof) for the model.
 Active liveness via Flutter app: ML Kit detects blink and head turn challenges
 for UX guidance only (not used in the authoritative decision).
 

@@ -1,3 +1,5 @@
+Status: Execution Plan
+
 # Decision Matrix — Thesis vs Startup
 
 This document records core architecture decisions to prevent drift across docs.
