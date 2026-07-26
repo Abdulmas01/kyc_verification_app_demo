@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'core/features/kyc/presentation/screens/home_screen.dart';
+import 'features/kyc/presentation/screens/home_screen.dart';
 import 'core/theme/app_theme.dart';
 import 'core/utils/toast_utils.dart';
 import 'helpers/navigation_helpers.dart';

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:kyc_verification_app_demo/core/theme/app_colors.dart';
 
-import '../../../../theme/app_colors.dart';
 import '../../domain/enums/verification_decision.dart';
 
 extension VerificationDecisionUiExt on VerificationDecision {

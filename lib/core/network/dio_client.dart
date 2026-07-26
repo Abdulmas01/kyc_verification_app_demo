@@ -6,7 +6,7 @@ import 'package:kyc_verification_app_demo/helpers/navigation_helpers.dart';
 import 'package:kyc_verification_app_demo/core/exception/network_exception.dart';
 import 'package:kyc_verification_app_demo/core/utils/logger.dart';
 import 'package:kyc_verification_app_demo/core/utils/toast_utils.dart';
-import 'package:kyc_verification_app_demo/core/features/auth/presentation/pages/login.dart';
+import 'package:kyc_verification_app_demo/features/auth/presentation/pages/login.dart';
 
 import 'constants.dart';
 import 'endpoints.dart';
