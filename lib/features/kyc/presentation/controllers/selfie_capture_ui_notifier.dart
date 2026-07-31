@@ -7,10 +7,59 @@ class SelfieCaptureUiNotifier
   @override
   SelfieCaptureUiState build() => SelfieCaptureUiState.initial();
 
-  void startDetection() {
+  void setFaceDetected(bool value) {
+    if (state.isFaceDetected == value) return;
+    state = state.copyWith(isFaceDetected: value);
+  }
+
+  void setChallengeMessage(String message) {
+    state = state.copyWith(
+      statusMessage: message,
+      errorMessage: null,
+    );
+  }
+
+  void markBlinkComplete() {
+    state = state.copyWith(
+      completedChallenges: 1,
+      currentChallenge: SelfieLivenessChallenge.turnLeft,
+      statusMessage: 'Great. Now slowly turn your head to the left.',
+      errorMessage: null,
+    );
+  }
+
+  void markTurnLeftComplete() {
+    state = state.copyWith(
+      completedChallenges: 2,
+      currentChallenge: SelfieLivenessChallenge.turnRight,
+      statusMessage: 'Nice. Now slowly turn your head to the right.',
+      errorMessage: null,
+    );
+  }
+
+  void markTurnRightComplete() {
+    state = state.copyWith(
+      completedChallenges: 3,
+      currentChallenge: SelfieLivenessChallenge.lookStraight,
+      statusMessage: 'Perfect. Look straight and hold still.',
+      errorMessage: null,
+    );
+  }
+
+  void startAutoCapture() {
+    state = state.copyWith(
+      isAutoCapturing: true,
+      isDetecting: true,
+      statusMessage: 'Hold steady. Capturing your best selfie...',
+      errorMessage: null,
+    );
+  }
+
+  void startCapture() {
     state = state.copyWith(
       isDetecting: true,
-      statusMessage: 'Checking for a face...',
+      isAutoCapturing: true,
+      statusMessage: 'Capturing your selfie...',
       errorMessage: null,
     );
   }
@@ -21,23 +70,32 @@ class SelfieCaptureUiNotifier
   }) {
     state = state.copyWith(
       isDetecting: false,
+      isAutoCapturing: false,
       statusMessage: statusMessage,
       errorMessage: errorMessage,
     );
   }
 
-  void resetIdleMessage(
-      [String message = 'Align your face inside the frame.']) {
+  void completeFlow() {
     state = state.copyWith(
       isDetecting: false,
-      statusMessage: message,
+      isAutoCapturing: false,
+      currentChallenge: SelfieLivenessChallenge.complete,
+      statusMessage: 'Liveness check complete.',
       errorMessage: null,
     );
   }
 
-  void clearError() {
-    if (!state.hasError) return;
-    state = state.copyWith(errorMessage: null);
+  void resetFlow() {
+    state = state.copyWith(
+      isDetecting: false,
+      isFaceDetected: false,
+      isAutoCapturing: false,
+      completedChallenges: 0,
+      currentChallenge: SelfieLivenessChallenge.blink,
+      statusMessage: 'Blink naturally to begin the liveness check.',
+      errorMessage: null,
+    );
   }
 }
 
