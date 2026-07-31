@@ -21,6 +21,7 @@ import 'package:kyc_verification_app_demo/core/extension/context_extention.dart'
 import 'package:kyc_verification_app_demo/core/theme/app_spacing.dart';
 import 'package:kyc_verification_app_demo/core/utils/toast_utils.dart';
 import 'package:kyc_verification_app_demo/core/widget/button_widget.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter/services.dart';
 
 import '../../../domain/models/kyc_capture_bundle.dart';
@@ -39,7 +40,8 @@ class SelfieCaptureStep extends ConsumerStatefulWidget {
   ConsumerState<SelfieCaptureStep> createState() => _SelfieCaptureStepState();
 }
 
-class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep> {
+class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
+    with WidgetsBindingObserver {
   CameraController? _controller;
   Future<void>? _initializeFuture;
   bool _isStreaming = false;
@@ -59,6 +61,7 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _faceDetector = FaceDetector(
       options: FaceDetectorOptions(
         enableContours: false,
@@ -71,35 +74,107 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep> {
   }
 
   Future<void> _initCamera() async {
-    final cameras = await availableCameras();
-    final frontCamera = cameras.firstWhere(
-      (camera) => camera.lensDirection == CameraLensDirection.front,
-      orElse: () => cameras.first,
-    );
+    final notifier = ref.read(selfieCaptureUiProvider.notifier);
+    notifier.resetFlow();
 
-    final controller = CameraController(
-      frontCamera,
-      ResolutionPreset.high,
-      enableAudio: false,
-      imageFormatGroup:
-          Platform.isIOS ? ImageFormatGroup.bgra8888 : ImageFormatGroup.yuv420,
-    );
-
-    await controller.initialize();
+    final permission = await Permission.camera.request();
     if (!mounted) return;
-    setState(() {
-      _controller = controller;
-    });
-    ref.read(selfieCaptureUiProvider.notifier).resetFlow();
-    await _startImageStream();
+
+    if (!permission.isGranted) {
+      notifier.setPermissionDenied(
+        permanentlyDenied:
+            permission.isPermanentlyDenied || permission.isRestricted,
+      );
+      return;
+    }
+
+    notifier.clearPermissionError();
+
+    try {
+      final cameras = await availableCameras();
+      if (cameras.isEmpty) {
+        notifier.setCameraError('No camera is available on this device.');
+        return;
+      }
+
+      final frontCamera = cameras.firstWhere(
+        (camera) => camera.lensDirection == CameraLensDirection.front,
+        orElse: () => cameras.first,
+      );
+
+      final controller = CameraController(
+        frontCamera,
+        ResolutionPreset.high,
+        enableAudio: false,
+        imageFormatGroup: Platform.isIOS
+            ? ImageFormatGroup.bgra8888
+            : ImageFormatGroup.yuv420,
+      );
+
+      await controller.initialize();
+      if (!mounted) {
+        await controller.dispose();
+        return;
+      }
+      setState(() {
+        _controller = controller;
+      });
+      notifier.setCameraReady(true);
+      await _startImageStream();
+    } on CameraException catch (e) {
+      notifier.setCameraError(
+        e.code == 'CameraAccessDenied'
+            ? 'Camera access was denied by the device.'
+            : 'Unable to start the front camera.',
+      );
+    } catch (_) {
+      notifier.setCameraError('Unable to start the front camera.');
+    }
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     unawaited(_stopImageStream());
     _controller?.dispose();
     _faceDetector.close();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (!mounted) return;
+    switch (state) {
+      case AppLifecycleState.resumed:
+        unawaited(_resumeCamera());
+        break;
+      case AppLifecycleState.inactive:
+      case AppLifecycleState.paused:
+      case AppLifecycleState.detached:
+      case AppLifecycleState.hidden:
+        unawaited(_pauseCamera());
+        break;
+    }
+  }
+
+  Future<void> _pauseCamera() async {
+    _isProcessingFrame = false;
+    await _stopImageStream();
+  }
+
+  Future<void> _resumeCamera() async {
+    final uiState = ref.read(selfieCaptureUiProvider);
+    if (uiState.isPermissionDenied || uiState.isPermanentlyDenied) {
+      return;
+    }
+    if (_controller == null || !(_controller?.value.isInitialized ?? false)) {
+      _initializeFuture = _initCamera();
+      if (mounted) setState(() {});
+      return;
+    }
+    if (!_isStreaming && !_capturingSelfie) {
+      await _startImageStream();
+    }
   }
 
   Future<void> _startImageStream() async {
@@ -386,6 +461,21 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep> {
                   child: FutureBuilder<void>(
                     future: _initializeFuture,
                     builder: (context, snapshot) {
+                      if (uiState.isPermissionDenied ||
+                          uiState.isPermanentlyDenied) {
+                        return _PermissionStateCard(
+                          permanentlyDenied: uiState.isPermanentlyDenied,
+                          onRetry: _retryCameraSetup,
+                        );
+                      }
+
+                      if (uiState.cameraErrorMessage != null) {
+                        return _CameraErrorCard(
+                          message: uiState.cameraErrorMessage!,
+                          onRetry: _retryCameraSetup,
+                        );
+                      }
+
                       if (snapshot.connectionState != ConnectionState.done) {
                         return const Center(child: CircularProgressIndicator());
                       }
@@ -426,19 +516,37 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep> {
               child: ButtonWidget(
                 text: uiState.isAutoCapturing
                     ? 'Capturing...'
-                    : 'Restart liveness check',
+                    : (uiState.isPermissionDenied ||
+                            uiState.cameraErrorMessage != null)
+                        ? 'Retry camera'
+                        : 'Restart liveness check',
                 enabled: !uiState.isAutoCapturing,
-                onTap: () {
-                  ref.read(selfieCaptureUiProvider.notifier).resetFlow();
-                  _blinkPrimed = false;
-                  HapticFeedback.selectionClick();
-                },
+                onTap: uiState.isPermissionDenied ||
+                        uiState.cameraErrorMessage != null
+                    ? _retryCameraSetup
+                    : () {
+                        ref.read(selfieCaptureUiProvider.notifier).resetFlow();
+                        _blinkPrimed = false;
+                        HapticFeedback.selectionClick();
+                      },
               ),
             ),
           ],
         ),
       ),
     );
+  }
+
+  Future<void> _retryCameraSetup() async {
+    _blinkPrimed = false;
+    _capturingSelfie = false;
+    await _stopImageStream();
+    await _controller?.dispose();
+    if (!mounted) return;
+    setState(() {
+      _controller = null;
+      _initializeFuture = _initCamera();
+    });
   }
 }
 
@@ -609,6 +717,94 @@ class _FaceOvalOverlay extends StatelessWidget {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PermissionStateCard extends StatelessWidget {
+  const _PermissionStateCard({
+    required this.permanentlyDenied,
+    required this.onRetry,
+  });
+
+  final bool permanentlyDenied;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: AppSpacing.pad16,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              'Camera permission needed',
+              style: context.textTheme.titleLarge,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: AppSpacing.s8),
+            Text(
+              permanentlyDenied
+                  ? 'Enable camera access in your phone settings to continue the selfie check.'
+                  : 'Allow camera access to continue the selfie and liveness check.',
+              style: context.textTheme.bodyMedium,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: AppSpacing.s16),
+            SizedBox(
+              width: double.infinity,
+              child: ButtonWidget(
+                text: permanentlyDenied ? 'Open settings' : 'Try again',
+                onTap: permanentlyDenied ? openAppSettings : onRetry,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CameraErrorCard extends StatelessWidget {
+  const _CameraErrorCard({
+    required this.message,
+    required this.onRetry,
+  });
+
+  final String message;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: AppSpacing.pad16,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              'Camera unavailable',
+              style: context.textTheme.titleLarge,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: AppSpacing.s8),
+            Text(
+              message,
+              style: context.textTheme.bodyMedium,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: AppSpacing.s16),
+            SizedBox(
+              width: double.infinity,
+              child: ButtonWidget(
+                text: 'Retry camera',
+                onTap: onRetry,
+              ),
+            ),
+          ],
         ),
       ),
     );

@@ -12,6 +12,52 @@ class SelfieCaptureUiNotifier
     state = state.copyWith(isFaceDetected: value);
   }
 
+  void setCameraReady(bool value) {
+    state = state.copyWith(
+      isCameraReady: value,
+      cameraErrorMessage: value ? null : state.cameraErrorMessage,
+    );
+  }
+
+  void setPermissionDenied({required bool permanentlyDenied}) {
+    state = state.copyWith(
+      isPermissionDenied: true,
+      isPermanentlyDenied: permanentlyDenied,
+      isCameraReady: false,
+      isDetecting: false,
+      isAutoCapturing: false,
+      cameraErrorMessage: permanentlyDenied
+          ? 'Camera access is permanently denied. Enable it in settings.'
+          : 'Camera access is required for selfie capture.',
+      errorMessage: null,
+      statusMessage: 'Allow camera access to continue.',
+    );
+  }
+
+  void clearPermissionError() {
+    if (!state.isPermissionDenied &&
+        !state.isPermanentlyDenied &&
+        state.cameraErrorMessage == null) {
+      return;
+    }
+    state = state.copyWith(
+      isPermissionDenied: false,
+      isPermanentlyDenied: false,
+      cameraErrorMessage: null,
+    );
+  }
+
+  void setCameraError(String message) {
+    state = state.copyWith(
+      isCameraReady: false,
+      isDetecting: false,
+      isAutoCapturing: false,
+      cameraErrorMessage: message,
+      errorMessage: null,
+      statusMessage: 'Camera unavailable.',
+    );
+  }
+
   void setChallengeMessage(String message) {
     state = state.copyWith(
       statusMessage: message,
@@ -91,9 +137,12 @@ class SelfieCaptureUiNotifier
       isDetecting: false,
       isFaceDetected: false,
       isAutoCapturing: false,
+      isPermissionDenied: false,
+      isPermanentlyDenied: false,
       completedChallenges: 0,
       currentChallenge: SelfieLivenessChallenge.blink,
       statusMessage: 'Blink naturally to begin the liveness check.',
+      cameraErrorMessage: null,
       errorMessage: null,
     );
   }

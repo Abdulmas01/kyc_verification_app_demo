@@ -13,9 +13,13 @@ class SelfieCaptureUiState {
   final bool isDetecting;
   final bool isFaceDetected;
   final bool isAutoCapturing;
+  final bool isPermissionDenied;
+  final bool isPermanentlyDenied;
+  final bool isCameraReady;
   final int completedChallenges;
   final int totalChallenges;
   final SelfieLivenessChallenge currentChallenge;
+  final String? cameraErrorMessage;
   final String? errorMessage;
 
   const SelfieCaptureUiState({
@@ -23,9 +27,13 @@ class SelfieCaptureUiState {
     required this.isDetecting,
     required this.isFaceDetected,
     required this.isAutoCapturing,
+    required this.isPermissionDenied,
+    required this.isPermanentlyDenied,
+    required this.isCameraReady,
     required this.completedChallenges,
     required this.totalChallenges,
     required this.currentChallenge,
+    this.cameraErrorMessage,
     this.errorMessage,
   });
 
@@ -35,9 +43,13 @@ class SelfieCaptureUiState {
       isDetecting: false,
       isFaceDetected: false,
       isAutoCapturing: false,
+      isPermissionDenied: false,
+      isPermanentlyDenied: false,
+      isCameraReady: false,
       completedChallenges: 0,
       totalChallenges: 3,
       currentChallenge: SelfieLivenessChallenge.blink,
+      cameraErrorMessage: null,
       errorMessage: null,
     );
   }
@@ -47,9 +59,13 @@ class SelfieCaptureUiState {
     bool? isDetecting,
     bool? isFaceDetected,
     bool? isAutoCapturing,
+    bool? isPermissionDenied,
+    bool? isPermanentlyDenied,
+    bool? isCameraReady,
     int? completedChallenges,
     int? totalChallenges,
     SelfieLivenessChallenge? currentChallenge,
+    Object? cameraErrorMessage = _sentinel,
     Object? errorMessage = _sentinel,
   }) {
     return SelfieCaptureUiState(
@@ -57,9 +73,15 @@ class SelfieCaptureUiState {
       isDetecting: isDetecting ?? this.isDetecting,
       isFaceDetected: isFaceDetected ?? this.isFaceDetected,
       isAutoCapturing: isAutoCapturing ?? this.isAutoCapturing,
+      isPermissionDenied: isPermissionDenied ?? this.isPermissionDenied,
+      isPermanentlyDenied: isPermanentlyDenied ?? this.isPermanentlyDenied,
+      isCameraReady: isCameraReady ?? this.isCameraReady,
       completedChallenges: completedChallenges ?? this.completedChallenges,
       totalChallenges: totalChallenges ?? this.totalChallenges,
       currentChallenge: currentChallenge ?? this.currentChallenge,
+      cameraErrorMessage: cameraErrorMessage == _sentinel
+          ? this.cameraErrorMessage
+          : cameraErrorMessage as String?,
       errorMessage: errorMessage == _sentinel
           ? this.errorMessage
           : errorMessage as String?,
