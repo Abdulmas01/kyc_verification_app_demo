@@ -7,6 +7,10 @@ class DocumentCaptureUiState {
   final bool isQualityGood;
   final double qualityConfidence;
   final bool isAutoCapturing;
+  final bool isPermissionDenied;
+  final bool isPermanentlyDenied;
+  final bool isCameraReady;
+  final String? cameraErrorMessage;
   final String? errorMessage;
 
   const DocumentCaptureUiState({
@@ -16,6 +20,10 @@ class DocumentCaptureUiState {
     required this.isQualityGood,
     required this.qualityConfidence,
     required this.isAutoCapturing,
+    required this.isPermissionDenied,
+    required this.isPermanentlyDenied,
+    required this.isCameraReady,
+    this.cameraErrorMessage,
     this.errorMessage,
   });
 
@@ -27,6 +35,10 @@ class DocumentCaptureUiState {
       isQualityGood: false,
       qualityConfidence: 0,
       isAutoCapturing: false,
+      isPermissionDenied: false,
+      isPermanentlyDenied: false,
+      isCameraReady: false,
+      cameraErrorMessage: null,
       errorMessage: null,
     );
   }
@@ -38,6 +50,10 @@ class DocumentCaptureUiState {
     bool? isQualityGood,
     double? qualityConfidence,
     bool? isAutoCapturing,
+    bool? isPermissionDenied,
+    bool? isPermanentlyDenied,
+    bool? isCameraReady,
+    Object? cameraErrorMessage = _sentinel,
     Object? errorMessage = _sentinel,
   }) {
     return DocumentCaptureUiState(
@@ -47,8 +63,15 @@ class DocumentCaptureUiState {
       isQualityGood: isQualityGood ?? this.isQualityGood,
       qualityConfidence: qualityConfidence ?? this.qualityConfidence,
       isAutoCapturing: isAutoCapturing ?? this.isAutoCapturing,
-      errorMessage:
-          errorMessage == _sentinel ? this.errorMessage : errorMessage as String?,
+      isPermissionDenied: isPermissionDenied ?? this.isPermissionDenied,
+      isPermanentlyDenied: isPermanentlyDenied ?? this.isPermanentlyDenied,
+      isCameraReady: isCameraReady ?? this.isCameraReady,
+      cameraErrorMessage: cameraErrorMessage == _sentinel
+          ? this.cameraErrorMessage
+          : cameraErrorMessage as String?,
+      errorMessage: errorMessage == _sentinel
+          ? this.errorMessage
+          : errorMessage as String?,
     );
   }
 

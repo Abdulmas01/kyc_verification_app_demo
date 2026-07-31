@@ -14,6 +14,7 @@ import 'package:kyc_verification_app_demo/core/utils/image_utils.dart';
 import 'package:kyc_verification_app_demo/core/widget/button_widget.dart';
 import 'package:flutter/services.dart';
 import 'package:kyc_verification_app_demo/core/utils/app_assets.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import '../../../domain/models/kyc_capture_bundle.dart';
 import '../../controllers/document_capture_ui_notifier.dart';
@@ -66,28 +67,63 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
   }
 
   Future<void> _initCamera() async {
-    final cameras = await availableCameras();
-    final backCamera = cameras.firstWhere(
-      (camera) => camera.lensDirection == CameraLensDirection.back,
-      orElse: () => cameras.first,
-    );
+    final notifier = ref.read(documentCaptureUiProvider.notifier);
+    notifier.resetFlow();
 
-    final controller = CameraController(
-      backCamera,
-      ResolutionPreset.medium,
-      enableAudio: false,
-      imageFormatGroup: ImageFormatGroup.yuv420,
-    );
-
-    await controller.initialize();
+    final permission = await Permission.camera.request();
     if (!mounted) return;
-    setState(() {
-      _controller = controller;
-    });
 
-    await _qualityIsolate?.start();
-    if (!mounted) return;
-    await _startImageStream();
+    if (!permission.isGranted) {
+      notifier.setPermissionDenied(
+        permanentlyDenied:
+            permission.isPermanentlyDenied || permission.isRestricted,
+      );
+      return;
+    }
+
+    notifier.clearPermissionError();
+
+    try {
+      final cameras = await availableCameras();
+      if (cameras.isEmpty) {
+        notifier.setCameraError('No camera is available on this device.');
+        return;
+      }
+
+      final backCamera = cameras.firstWhere(
+        (camera) => camera.lensDirection == CameraLensDirection.back,
+        orElse: () => cameras.first,
+      );
+
+      final controller = CameraController(
+        backCamera,
+        ResolutionPreset.medium,
+        enableAudio: false,
+        imageFormatGroup: ImageFormatGroup.yuv420,
+      );
+
+      await controller.initialize();
+      if (!mounted) {
+        await controller.dispose();
+        return;
+      }
+      setState(() {
+        _controller = controller;
+      });
+
+      await _qualityIsolate?.start();
+      if (!mounted) return;
+      notifier.setCameraReady(true);
+      await _startImageStream();
+    } on CameraException catch (e) {
+      notifier.setCameraError(
+        e.code == 'CameraAccessDenied'
+            ? 'Camera access was denied by the device.'
+            : 'Unable to start the back camera.',
+      );
+    } catch (_) {
+      notifier.setCameraError('Unable to start the back camera.');
+    }
   }
 
   @override
@@ -126,8 +162,13 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
   }
 
   Future<void> _resumeCamera() async {
+    final uiState = ref.read(documentCaptureUiProvider);
+    if (uiState.isPermissionDenied || uiState.isPermanentlyDenied) {
+      return;
+    }
     if (_controller == null || !(_controller?.value.isInitialized ?? false)) {
       _initializeFuture = _initCamera();
+      if (mounted) setState(() {});
       return;
     }
     if (!_isStreaming) {
@@ -276,10 +317,11 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
       notifier.setError('Capture failed. Please try again.');
       ToastUtil.showErrorToast('Document capture failed. Try again.');
     } finally {
-      if (!mounted) return;
-      notifier.setDetecting(false);
-      if (_controller != null && !_isStreaming) {
-        await _startImageStream();
+      if (mounted) {
+        notifier.setDetecting(false);
+        if (_controller != null && !_isStreaming) {
+          await _startImageStream();
+        }
       }
     }
   }
@@ -325,6 +367,21 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
                         return const Center(child: CircularProgressIndicator());
                       }
 
+                      if (uiState.isPermissionDenied ||
+                          uiState.isPermanentlyDenied) {
+                        return _PermissionStateCard(
+                          permanentlyDenied: uiState.isPermanentlyDenied,
+                          onRetry: _retryCameraSetup,
+                        );
+                      }
+
+                      if (uiState.cameraErrorMessage != null) {
+                        return _CameraErrorCard(
+                          message: uiState.cameraErrorMessage!,
+                          onRetry: _retryCameraSetup,
+                        );
+                      }
+
                       if (_controller == null ||
                           !_controller!.value.isInitialized) {
                         return Center(
@@ -351,9 +408,20 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
             SizedBox(
               width: double.infinity,
               child: ButtonWidget(
-                text: uiState.isDetecting ? 'Detecting...' : 'Capture Document',
-                enabled: !uiState.isDetecting && uiState.isQualityGood,
-                onTap: _captureAndDetect,
+                text: uiState.isPermissionDenied ||
+                        uiState.cameraErrorMessage != null
+                    ? 'Retry camera'
+                    : (uiState.isDetecting
+                        ? 'Detecting...'
+                        : 'Capture Document'),
+                enabled: uiState.isPermissionDenied ||
+                        uiState.cameraErrorMessage != null
+                    ? true
+                    : !uiState.isDetecting && uiState.isQualityGood,
+                onTap: uiState.isPermissionDenied ||
+                        uiState.cameraErrorMessage != null
+                    ? _retryCameraSetup
+                    : _captureAndDetect,
               ),
             ),
             if (uiState.isAutoCapturing) ...[
@@ -385,6 +453,106 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
         message,
         style: context.textTheme.bodySmall?.copyWith(
           color: colors.onErrorContainer,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _retryCameraSetup() async {
+    _autoCaptureTimer?.cancel();
+    _isProcessingFrame = false;
+    await _pauseCamera();
+    await _controller?.dispose();
+    if (!mounted) return;
+    setState(() {
+      _controller = null;
+      _initializeFuture = _initCamera();
+    });
+  }
+}
+
+class _PermissionStateCard extends StatelessWidget {
+  const _PermissionStateCard({
+    required this.permanentlyDenied,
+    required this.onRetry,
+  });
+
+  final bool permanentlyDenied;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: AppSpacing.pad16,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              'Camera permission needed',
+              style: context.textTheme.titleLarge,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: AppSpacing.s8),
+            Text(
+              permanentlyDenied
+                  ? 'Enable camera access in your phone settings to continue document capture.'
+                  : 'Allow camera access to continue document capture.',
+              style: context.textTheme.bodyMedium,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: AppSpacing.s16),
+            SizedBox(
+              width: double.infinity,
+              child: ButtonWidget(
+                text: permanentlyDenied ? 'Open settings' : 'Try again',
+                onTap: permanentlyDenied ? openAppSettings : onRetry,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CameraErrorCard extends StatelessWidget {
+  const _CameraErrorCard({
+    required this.message,
+    required this.onRetry,
+  });
+
+  final String message;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: AppSpacing.pad16,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              'Camera unavailable',
+              style: context.textTheme.titleLarge,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: AppSpacing.s8),
+            Text(
+              message,
+              style: context.textTheme.bodyMedium,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: AppSpacing.s16),
+            SizedBox(
+              width: double.infinity,
+              child: ButtonWidget(
+                text: 'Retry camera',
+                onTap: onRetry,
+              ),
+            ),
+          ],
         ),
       ),
     );
