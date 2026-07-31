@@ -1,5 +1,6 @@
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 import 'package:kyc_verification_app_demo/core/extension/context_extention.dart';
 import 'package:kyc_verification_app_demo/core/theme/app_spacing.dart';
@@ -8,9 +9,10 @@ import 'package:kyc_verification_app_demo/core/widget/button_widget.dart';
 import 'package:flutter/services.dart';
 
 import '../../../domain/models/kyc_capture_bundle.dart';
+import '../../controllers/selfie_capture_ui_notifier.dart';
 import 'processing_step.dart';
 
-class SelfieCaptureStep extends StatefulWidget {
+class SelfieCaptureStep extends ConsumerStatefulWidget {
   const SelfieCaptureStep({super.key, required this.captureBundle});
 
   static const String path = '/kyc/selfie';
@@ -18,15 +20,12 @@ class SelfieCaptureStep extends StatefulWidget {
   final KycCaptureBundle captureBundle;
 
   @override
-  State<SelfieCaptureStep> createState() => _SelfieCaptureStepState();
+  ConsumerState<SelfieCaptureStep> createState() => _SelfieCaptureStepState();
 }
 
-class _SelfieCaptureStepState extends State<SelfieCaptureStep> {
+class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep> {
   CameraController? _controller;
   Future<void>? _initializeFuture;
-  bool _isDetecting = false;
-  String _statusMessage = 'Align your face inside the frame.';
-  String? _errorMessage;
 
   late final FaceDetector _faceDetector;
 
@@ -70,13 +69,11 @@ class _SelfieCaptureStepState extends State<SelfieCaptureStep> {
   }
 
   Future<void> _captureAndDetect() async {
-    if (_controller == null || _isDetecting) return;
+    final selfieCaptureUiNotifier = ref.read(selfieCaptureUiProvider.notifier);
+    final selfieCaptureUiState = ref.read(selfieCaptureUiProvider);
+    if (_controller == null || selfieCaptureUiState.isDetecting) return;
 
-    setState(() {
-      _isDetecting = true;
-      _statusMessage = 'Checking for a face...';
-      _errorMessage = null;
-    });
+    selfieCaptureUiNotifier.startDetection();
 
     try {
       final file = await _controller!.takePicture();
@@ -85,11 +82,10 @@ class _SelfieCaptureStepState extends State<SelfieCaptureStep> {
 
       if (!mounted) return;
       if (faces.isEmpty) {
-        setState(() {
-          _statusMessage = 'No face detected. Try again.';
-          _isDetecting = false;
-          _errorMessage = 'No face detected. Try again.';
-        });
+        selfieCaptureUiNotifier.setError(
+          statusMessage: 'No face detected. Try again.',
+          errorMessage: 'No face detected. Try again.',
+        );
         HapticFeedback.lightImpact();
         ToastUtil.showErrorToast('No face detected. Try again.');
         return;
@@ -107,20 +103,26 @@ class _SelfieCaptureStepState extends State<SelfieCaptureStep> {
       );
     } catch (e) {
       if (!mounted) return;
-      setState(() {
-        _statusMessage = 'Capture failed. Please try again.';
-        _errorMessage = 'Selfie capture failed. Try again.';
-      });
+      selfieCaptureUiNotifier.setError(
+        statusMessage: 'Capture failed. Please try again.',
+        errorMessage: 'Selfie capture failed. Try again.',
+      );
       HapticFeedback.lightImpact();
       ToastUtil.showErrorToast('Selfie capture failed. Try again.');
     } finally {
-      if (!mounted) return;
-      setState(() => _isDetecting = false);
+      if (mounted) {
+        final uiState = ref.read(selfieCaptureUiProvider);
+        if (!uiState.hasError) {
+          selfieCaptureUiNotifier.resetIdleMessage();
+        }
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final uiState = ref.watch(selfieCaptureUiProvider);
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Selfie & Liveness'),
@@ -140,10 +142,10 @@ class _SelfieCaptureStepState extends State<SelfieCaptureStep> {
               style: context.textTheme.bodyMedium,
             ),
             const SizedBox(height: AppSpacing.s16),
-            Text(_statusMessage, style: context.textTheme.bodySmall),
-            if (_errorMessage != null) ...[
+            Text(uiState.statusMessage, style: context.textTheme.bodySmall),
+            if (uiState.hasError) ...[
               const SizedBox(height: AppSpacing.s8),
-              _buildErrorBanner(context, _errorMessage!),
+              _ErrorBanner(message: uiState.errorMessage ?? ''),
             ],
             const SizedBox(height: AppSpacing.s16),
             Expanded(
@@ -178,8 +180,8 @@ class _SelfieCaptureStepState extends State<SelfieCaptureStep> {
             SizedBox(
               width: double.infinity,
               child: ButtonWidget(
-                text: _isDetecting ? 'Checking...' : 'Continue',
-                enabled: !_isDetecting,
+                text: uiState.isDetecting ? 'Checking...' : 'Continue',
+                enabled: !uiState.isDetecting,
                 onTap: _captureAndDetect,
               ),
             ),
@@ -188,8 +190,15 @@ class _SelfieCaptureStepState extends State<SelfieCaptureStep> {
       ),
     );
   }
+}
 
-  Widget _buildErrorBanner(BuildContext context, String message) {
+class _ErrorBanner extends StatelessWidget {
+  const _ErrorBanner({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     return Container(
       width: double.infinity,
