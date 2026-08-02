@@ -18,6 +18,7 @@ import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart'
         InputImageRotation,
         InputImageRotationValue;
 import 'package:kyc_verification_app_demo/core/extension/context_extention.dart';
+import 'package:kyc_verification_app_demo/core/ml/liveness_shadow_model.dart';
 import 'package:kyc_verification_app_demo/core/theme/app_spacing.dart';
 import 'package:kyc_verification_app_demo/core/utils/toast_utils.dart';
 import 'package:kyc_verification_app_demo/core/widget/button_widget.dart';
@@ -71,6 +72,9 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
     WidgetsBinding.instance.addObserver(this);
     ref.read(thesisDebugReportProvider.notifier).attachSelfieConfig(
           _selfieConfigToJson(widget.effectiveLivenessConfig),
+        );
+    ref.read(thesisDebugReportProvider.notifier).configureMobileLivenessShadow(
+          enabled: widget.effectiveLivenessConfig.mobileShadow.enabled,
         );
     _faceDetector = FaceDetector(
       options: FaceDetectorOptions(
@@ -414,6 +418,8 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
       ref
           .read(thesisDebugReportProvider.notifier)
           .recordSelfieCapture(file.path);
+      await _runMobileLivenessShadowIfEnabled(file.path);
+      if (!mounted) return;
       HapticFeedback.heavyImpact();
       Navigator.of(context).push(
         MaterialPageRoute(
@@ -443,6 +449,40 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
       _capturingSelfie = false;
       if (mounted && ref.read(selfieCaptureUiProvider).shouldRedo) {
         await _stopImageStream();
+      }
+    }
+  }
+
+  Future<void> _runMobileLivenessShadowIfEnabled(String selfiePath) async {
+    final shadowConfig = widget.effectiveLivenessConfig.mobileShadow;
+    if (!shadowConfig.enabled) {
+      return;
+    }
+
+    try {
+      final prediction = await LivenessShadowModel.predictFromFile(selfiePath);
+      if (prediction == null) {
+        ref
+            .read(thesisDebugReportProvider.notifier)
+            .recordMobileLivenessShadowUnavailable(
+              'Shadow liveness asset is missing or could not be loaded.',
+            );
+        return;
+      }
+
+      ref
+          .read(thesisDebugReportProvider.notifier)
+          .recordMobileLivenessShadowSuccess(
+            score: prediction.liveScore,
+            latencyMs: prediction.latencyMs,
+          );
+    } catch (error) {
+      ref
+          .read(thesisDebugReportProvider.notifier)
+          .recordMobileLivenessShadowUnavailable(error.toString());
+
+      if (!shadowConfig.failOpen) {
+        rethrow;
       }
     }
   }
@@ -676,6 +716,10 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
       'blink_open_threshold': config.blinkOpenThreshold,
       'head_turn_threshold': config.headTurnThreshold,
       'look_straight_threshold': config.lookStraightThreshold,
+      'mobile_shadow': {
+        'enabled': config.mobileShadow.enabled,
+        'fail_open': config.mobileShadow.failOpen,
+      },
     };
   }
 }

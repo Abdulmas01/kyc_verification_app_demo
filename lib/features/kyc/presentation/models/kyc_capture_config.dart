@@ -72,7 +72,13 @@ class SelfieLivenessConfig {
   final double blinkOpenThreshold;
   final double headTurnThreshold;
   final double lookStraightThreshold;
+  final MobileLivenessShadowConfig mobileShadow;
 
+  /// Active liveness guidance plus optional mobile shadow benchmarking config.
+  ///
+  /// `mobileShadow` never changes the authoritative decision path. It exists so
+  /// we can test whether a compressed liveness model loads and runs on device,
+  /// then compare those shadow outputs with backend scores for thesis evidence.
   const SelfieLivenessConfig({
     required this.resolutionPreset,
     required this.androidImageFormatGroup,
@@ -83,6 +89,7 @@ class SelfieLivenessConfig {
     required this.blinkOpenThreshold,
     required this.headTurnThreshold,
     required this.lookStraightThreshold,
+    this.mobileShadow = const MobileLivenessShadowConfig.disabled(),
   });
 
   const SelfieLivenessConfig.balanced()
@@ -94,7 +101,8 @@ class SelfieLivenessConfig {
         blinkClosedThreshold = 0.25,
         blinkOpenThreshold = 0.7,
         headTurnThreshold = 18,
-        lookStraightThreshold = 8;
+        lookStraightThreshold = 8,
+        mobileShadow = const MobileLivenessShadowConfig.disabled();
 
   const SelfieLivenessConfig.fast()
       : resolutionPreset = ResolutionPreset.medium,
@@ -105,7 +113,8 @@ class SelfieLivenessConfig {
         blinkClosedThreshold = 0.22,
         blinkOpenThreshold = 0.68,
         headTurnThreshold = 16,
-        lookStraightThreshold = 10;
+        lookStraightThreshold = 10,
+        mobileShadow = const MobileLivenessShadowConfig.disabled();
 
   const SelfieLivenessConfig.highQuality()
       : resolutionPreset = ResolutionPreset.veryHigh,
@@ -116,7 +125,32 @@ class SelfieLivenessConfig {
         blinkClosedThreshold = 0.25,
         blinkOpenThreshold = 0.72,
         headTurnThreshold = 20,
-        lookStraightThreshold = 7;
+        lookStraightThreshold = 7,
+        mobileShadow = const MobileLivenessShadowConfig.disabled();
+}
+
+class MobileLivenessShadowConfig {
+  /// Enables optional mobile liveness inference for benchmarking and comparison.
+  ///
+  /// Default this to `false`. If the model is unready, missing, or unstable on a
+  /// device, the thesis flow should continue with backend liveness only.
+  final bool enabled;
+
+  /// When `true`, shadow-model failures are logged instead of blocking capture.
+  final bool failOpen;
+
+  const MobileLivenessShadowConfig({
+    required this.enabled,
+    required this.failOpen,
+  });
+
+  const MobileLivenessShadowConfig.disabled()
+      : enabled = false,
+        failOpen = true;
+
+  const MobileLivenessShadowConfig.enabledShadow()
+      : enabled = true,
+        failOpen = true;
 }
 
 class KycCaptureProfile {

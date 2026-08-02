@@ -25,6 +25,12 @@ class ThesisDebugReport {
     this.selfieRedoCount = 0,
     this.selfieTimeoutCount = 0,
     this.completedChallenges = const [],
+    this.mobileLivenessShadowEnabled = false,
+    this.mobileLivenessShadowAttempted = false,
+    this.mobileLivenessShadowAvailable = false,
+    this.mobileLivenessShadowScore,
+    this.mobileLivenessShadowLatencyMs,
+    this.mobileLivenessShadowError,
     this.processingStartedAt,
     this.uploadProgressPeak = 0,
     this.uploadDurationMs,
@@ -60,6 +66,12 @@ class ThesisDebugReport {
   final int selfieRedoCount;
   final int selfieTimeoutCount;
   final List<String> completedChallenges;
+  final bool mobileLivenessShadowEnabled;
+  final bool mobileLivenessShadowAttempted;
+  final bool mobileLivenessShadowAvailable;
+  final double? mobileLivenessShadowScore;
+  final double? mobileLivenessShadowLatencyMs;
+  final String? mobileLivenessShadowError;
   final DateTime? processingStartedAt;
   final double uploadProgressPeak;
   final int? uploadDurationMs;
@@ -114,6 +126,15 @@ class ThesisDebugReport {
     int? selfieRedoCount,
     int? selfieTimeoutCount,
     List<String>? completedChallenges,
+    bool? mobileLivenessShadowEnabled,
+    bool? mobileLivenessShadowAttempted,
+    bool? mobileLivenessShadowAvailable,
+    double? mobileLivenessShadowScore,
+    bool clearMobileLivenessShadowScore = false,
+    double? mobileLivenessShadowLatencyMs,
+    bool clearMobileLivenessShadowLatencyMs = false,
+    String? mobileLivenessShadowError,
+    bool clearMobileLivenessShadowError = false,
     DateTime? processingStartedAt,
     bool clearProcessingStartedAt = false,
     double? uploadProgressPeak,
@@ -177,6 +198,22 @@ class ThesisDebugReport {
       selfieRedoCount: selfieRedoCount ?? this.selfieRedoCount,
       selfieTimeoutCount: selfieTimeoutCount ?? this.selfieTimeoutCount,
       completedChallenges: completedChallenges ?? this.completedChallenges,
+      mobileLivenessShadowEnabled:
+          mobileLivenessShadowEnabled ?? this.mobileLivenessShadowEnabled,
+      mobileLivenessShadowAttempted:
+          mobileLivenessShadowAttempted ?? this.mobileLivenessShadowAttempted,
+      mobileLivenessShadowAvailable:
+          mobileLivenessShadowAvailable ?? this.mobileLivenessShadowAvailable,
+      mobileLivenessShadowScore: clearMobileLivenessShadowScore
+          ? null
+          : (mobileLivenessShadowScore ?? this.mobileLivenessShadowScore),
+      mobileLivenessShadowLatencyMs: clearMobileLivenessShadowLatencyMs
+          ? null
+          : (mobileLivenessShadowLatencyMs ??
+              this.mobileLivenessShadowLatencyMs),
+      mobileLivenessShadowError: clearMobileLivenessShadowError
+          ? null
+          : (mobileLivenessShadowError ?? this.mobileLivenessShadowError),
       processingStartedAt: clearProcessingStartedAt
           ? null
           : (processingStartedAt ?? this.processingStartedAt),
@@ -235,6 +272,14 @@ class ThesisDebugReport {
           'redo_count': selfieRedoCount,
           'timeout_count': selfieTimeoutCount,
           'completed_challenges': completedChallenges,
+          'mobile_shadow': {
+            'enabled': mobileLivenessShadowEnabled,
+            'attempted': mobileLivenessShadowAttempted,
+            'available': mobileLivenessShadowAvailable,
+            'score': mobileLivenessShadowScore,
+            'latency_ms': mobileLivenessShadowLatencyMs,
+            'error': mobileLivenessShadowError,
+          },
         },
       },
       'processing': {

@@ -20,6 +20,17 @@ class ThesisDebugReportNotifier extends Notifier<ThesisDebugReport> {
     state = state.copyWith(selfieConfig: selfieConfig);
   }
 
+  void configureMobileLivenessShadow({required bool enabled}) {
+    state = state.copyWith(
+      mobileLivenessShadowEnabled: enabled,
+      mobileLivenessShadowAttempted: false,
+      mobileLivenessShadowAvailable: false,
+      clearMobileLivenessShadowScore: true,
+      clearMobileLivenessShadowLatencyMs: true,
+      clearMobileLivenessShadowError: true,
+    );
+  }
+
   void recordDocumentQuality({
     required String statusMessage,
     required String qualityLabel,
@@ -93,6 +104,29 @@ class ThesisDebugReportNotifier extends Notifier<ThesisDebugReport> {
     state = state.copyWith(
       selfiePath: selfiePath,
       clearSelfieError: true,
+    );
+  }
+
+  void recordMobileLivenessShadowSuccess({
+    required double score,
+    required double latencyMs,
+  }) {
+    state = state.copyWith(
+      mobileLivenessShadowAttempted: true,
+      mobileLivenessShadowAvailable: true,
+      mobileLivenessShadowScore: score,
+      mobileLivenessShadowLatencyMs: latencyMs,
+      clearMobileLivenessShadowError: true,
+    );
+  }
+
+  void recordMobileLivenessShadowUnavailable(String message) {
+    state = state.copyWith(
+      mobileLivenessShadowAttempted: true,
+      mobileLivenessShadowAvailable: false,
+      mobileLivenessShadowError: message,
+      clearMobileLivenessShadowScore: true,
+      clearMobileLivenessShadowLatencyMs: true,
     );
   }
 
