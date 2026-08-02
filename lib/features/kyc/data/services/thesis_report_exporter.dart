@@ -1,0 +1,189 @@
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
+import 'package:path_provider/path_provider.dart';
+
+import '../../presentation/models/thesis_debug_report.dart';
+
+class ThesisReportExportResult {
+  const ThesisReportExportResult({
+    required this.directoryPath,
+    required this.reportMarkdownPath,
+    required this.reportJsonPath,
+    required this.summaryText,
+  });
+
+  final String directoryPath;
+  final String reportMarkdownPath;
+  final String reportJsonPath;
+  final String summaryText;
+}
+
+class ThesisReportExporter {
+  Future<ThesisReportExportResult> export(ThesisDebugReport report) async {
+    final documentsDirectory = await getApplicationDocumentsDirectory();
+    final exportDirectory = Directory(
+      '${documentsDirectory.path}/kyc_thesis_reports/${report.runId}',
+    );
+    final capturesDirectory = Directory(
+      '${exportDirectory.path}/supporting/captures',
+    );
+    final backendDirectory = Directory(
+      '${exportDirectory.path}/supporting/backend',
+    );
+
+    await capturesDirectory.create(recursive: true);
+    await backendDirectory.create(recursive: true);
+
+    String? copiedDocumentPath;
+    String? copiedSelfiePath;
+    copiedDocumentPath = await _copyIfPresent(
+      sourcePath: report.normalizedDocumentPath ?? report.documentPath,
+      targetPath: '${capturesDirectory.path}/document.jpg',
+    );
+    copiedSelfiePath = await _copyIfPresent(
+      sourcePath: report.selfiePath,
+      targetPath: '${capturesDirectory.path}/selfie.jpg',
+    );
+
+    final backendPayloadPath = '${backendDirectory.path}/result_payload.json';
+    if (report.result != null) {
+      await File(backendPayloadPath).writeAsString(
+        const JsonEncoder.withIndent('  ').convert(report.result!.toJson()),
+      );
+    }
+
+    final supportingFiles = {
+      'captures': {
+        'document': copiedDocumentPath,
+        'selfie': copiedSelfiePath,
+      },
+      'backend': {
+        'result_payload': report.result != null ? backendPayloadPath : null,
+      },
+    };
+
+    final jsonPath = '${exportDirectory.path}/report.json';
+    final markdownPath = '${exportDirectory.path}/report.md';
+    final summaryText =
+        _buildSummary(report, exportDirectory.path, supportingFiles);
+    final jsonBody = report.toJson(
+      exportDirectoryPath: exportDirectory.path,
+      supportingFiles: supportingFiles,
+    );
+
+    await File(jsonPath).writeAsString(
+      const JsonEncoder.withIndent('  ').convert(jsonBody),
+    );
+    await File(markdownPath).writeAsString(summaryText);
+
+    return ThesisReportExportResult(
+      directoryPath: exportDirectory.path,
+      reportMarkdownPath: markdownPath,
+      reportJsonPath: jsonPath,
+      summaryText: summaryText,
+    );
+  }
+
+  Future<String?> _copyIfPresent({
+    required String? sourcePath,
+    required String targetPath,
+  }) async {
+    if (sourcePath == null || sourcePath.isEmpty) return null;
+    final file = File(sourcePath);
+    if (!await file.exists()) return null;
+    await file.copy(targetPath);
+    return targetPath;
+  }
+
+  String _buildSummary(
+    ThesisDebugReport report,
+    String exportDirectory,
+    Map<String, dynamic> supportingFiles,
+  ) {
+    final formatter = DateFormat('yyyy-MM-dd HH:mm:ss');
+    final result = report.result;
+    final lines = <String>[
+      '# KYC Thesis Debug Report',
+      '',
+      '## Run Metadata',
+      '- Run ID: `${report.runId}`',
+      '- Started At: ${formatter.format(report.startedAt)}',
+      '- Export Directory: `$exportDirectory`',
+      '',
+      '## Document Capture',
+      '- Status: ${report.documentStatusMessage ?? 'N/A'}',
+      '- Quality Label: ${report.documentQualityLabel ?? 'N/A'}',
+      '- Quality Confidence: ${_formatDouble(report.documentQualityConfidence)}',
+      '- Quality Accepted: ${report.documentQualityAccepted?.toString() ?? 'N/A'}',
+      '- Average Inference: ${_formatDouble(report.documentAverageInferenceMs, suffix: ' ms')}',
+      '- Inference Samples: ${report.documentInferenceSamples}',
+      '- Adaptive Frame Stride: ${report.documentFrameStride ?? 'N/A'}',
+      '- Auto Capture Triggered: ${report.documentAutoCaptureTriggered}',
+      '- Document Detected: ${report.documentDetected}',
+      '- Last Error: ${report.documentError ?? 'None'}',
+      '',
+      '## Selfie And Liveness',
+      '- Status: ${report.selfieStatusMessage ?? 'N/A'}',
+      '- Face Detected: ${report.selfieFaceDetected}',
+      '- Completed Challenges: ${report.completedChallenges.isEmpty ? 'None' : report.completedChallenges.join(', ')}',
+      '- Redo Count: ${report.selfieRedoCount}',
+      '- Timeout Count: ${report.selfieTimeoutCount}',
+      '- Last Error: ${report.selfieError ?? 'None'}',
+      '',
+      '## Processing',
+      '- Backend Session ID: ${report.backendSessionId ?? result?.sessionId ?? 'N/A'}',
+      '- Upload Progress Peak: ${_formatDouble(report.uploadProgressPeak * 100, suffix: '%')}',
+      '- Upload Duration: ${_formatNullableInt(report.uploadDurationMs, suffix: ' ms')}',
+      '- Total Verification Duration: ${_formatNullableInt(report.totalVerificationDurationMs, suffix: ' ms')}',
+      '- Poll Attempts: ${report.pollAttempts}',
+      '- API Error: ${report.apiError ?? 'None'}',
+      '',
+      '## Final Result',
+      '- Decision: ${result == null ? 'N/A' : result.toJson()['decision']}',
+      '- Risk Score: ${_formatDouble(result?.riskScore)}',
+      '- Reason Codes: ${result == null || result.reasonCodes.isEmpty ? 'None' : result.reasonCodes.join(', ')}',
+      '- OCR Confidence: ${_formatDouble(result?.ocrConfidence)}',
+      '- Field Valid Score: ${_formatDouble(result?.fieldValidScore)}',
+      '- Face Similarity: ${_formatDouble(result?.faceSimilarity)}',
+      '- Face Area Ratio: ${_formatDouble(result?.faceAreaRatio)}',
+      '- Liveness Score: ${_formatDouble(result?.livenessScore)}',
+      '- Quality Score: ${_formatDouble(result?.qualityScore)}',
+      '',
+      '## Supporting Files',
+      '- `report.json`',
+      '- `report.md`',
+      '- `supporting/captures/document.jpg`: ${supportingFiles['captures']['document'] ?? 'Not exported'}',
+      '- `supporting/captures/selfie.jpg`: ${supportingFiles['captures']['selfie'] ?? 'Not exported'}',
+      '- `supporting/backend/result_payload.json`: ${supportingFiles['backend']['result_payload'] ?? 'Not exported'}',
+      '',
+      '## Config Snapshot',
+      '```json',
+      const JsonEncoder.withIndent('  ').convert({
+        'document': report.documentConfig,
+        'selfie_liveness': report.selfieConfig,
+      }),
+      '```',
+    ];
+    return lines.join('\n');
+  }
+
+  String _formatDouble(double? value, {String suffix = ''}) {
+    if (value == null) return 'N/A';
+    return '${value.toStringAsFixed(3)}$suffix';
+  }
+
+  String _formatNullableInt(int? value, {String suffix = ''}) {
+    if (value == null) return 'N/A';
+    return '$value$suffix';
+  }
+}
+
+final thesisReportExporterProvider = Provider<ThesisReportExporter>((ref) {
+  return ThesisReportExporter();
+});
+
+final latestThesisReportExportProvider =
+    StateProvider<ThesisReportExportResult?>((ref) => null);

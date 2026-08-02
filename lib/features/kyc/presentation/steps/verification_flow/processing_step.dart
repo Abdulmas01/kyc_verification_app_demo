@@ -9,6 +9,7 @@ import 'package:kyc_verification_app_demo/core/widget/button_widget.dart';
 
 import '../../screens/result_screen.dart';
 import '../../controllers/processing_ui_notifier.dart';
+import '../../controllers/thesis_debug_report_notifier.dart';
 import '../../controllers/verification_api_notifier.dart';
 import '../../../domain/models/kyc_capture_bundle.dart';
 import '../../models/processing_ui_state.dart';
@@ -59,6 +60,9 @@ class _ProcessingStepState extends ConsumerState<ProcessingStep> {
       body: PopScope(
         onPopInvokedWithResult: (_, __) {
           ref.read(verificationApiProvider.notifier).clear();
+          ref.read(thesisDebugReportProvider.notifier).recordApiError(
+                'Verification screen exited before completion.',
+              );
         },
         child: Padding(
           padding: AppSpacing.pad16,

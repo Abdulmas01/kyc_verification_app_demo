@@ -26,6 +26,7 @@ import 'package:flutter/services.dart';
 
 import '../../../domain/models/kyc_capture_bundle.dart';
 import '../../controllers/selfie_capture_ui_notifier.dart';
+import '../../controllers/thesis_debug_report_notifier.dart';
 import '../../models/kyc_capture_config.dart';
 import '../../models/selfie_capture_ui_state.dart';
 import 'processing_step.dart';
@@ -68,6 +69,9 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    ref.read(thesisDebugReportProvider.notifier).attachSelfieConfig(
+          _selfieConfigToJson(widget.effectiveLivenessConfig),
+        );
     _faceDetector = FaceDetector(
       options: FaceDetectorOptions(
         enableContours: false,
@@ -87,6 +91,12 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
     if (!mounted) return;
 
     if (!permission.isGranted) {
+      ref.read(thesisDebugReportProvider.notifier).recordSelfieStatus(
+            errorMessage:
+                permission.isPermanentlyDenied || permission.isRestricted
+                    ? 'Camera permission permanently denied.'
+                    : 'Camera permission denied.',
+          );
       notifier.setPermissionDenied(
         permanentlyDenied:
             permission.isPermanentlyDenied || permission.isRestricted,
@@ -129,12 +139,18 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
       _scheduleChallengeTimeout();
       await _startImageStream();
     } on CameraException catch (e) {
+      ref.read(thesisDebugReportProvider.notifier).recordSelfieStatus(
+            errorMessage: e.description ?? 'Unable to start the front camera.',
+          );
       notifier.setCameraError(
         e.code == 'CameraAccessDenied'
             ? 'Camera access was denied by the device.'
             : 'Unable to start the front camera.',
       );
     } catch (_) {
+      ref.read(thesisDebugReportProvider.notifier).recordSelfieStatus(
+            errorMessage: 'Unable to start the front camera.',
+          );
       notifier.setCameraError('Unable to start the front camera.');
     }
   }
@@ -221,23 +237,39 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
       if (faces.isEmpty) {
         _blinkPrimed = false;
         selfieCaptureUiNotifier.setFaceDetected(false);
+        ref.read(thesisDebugReportProvider.notifier).recordSelfieFaceDetected(
+              false,
+            );
         selfieCaptureUiNotifier.setChallengeMessage(
           'Center your face in the oval to continue.',
         );
+        ref.read(thesisDebugReportProvider.notifier).recordSelfieStatus(
+              statusMessage: 'Center your face in the oval to continue.',
+            );
         return;
       }
 
       if (faces.length > 1) {
         selfieCaptureUiNotifier.setFaceDetected(false);
+        ref.read(thesisDebugReportProvider.notifier).recordSelfieFaceDetected(
+              false,
+            );
         selfieCaptureUiNotifier.setError(
           statusMessage: 'Only one face should be visible.',
           errorMessage: 'Multiple faces detected. Please continue alone.',
         );
+        ref.read(thesisDebugReportProvider.notifier).recordSelfieStatus(
+              statusMessage: 'Only one face should be visible.',
+              errorMessage: 'Multiple faces detected. Please continue alone.',
+            );
         return;
       }
 
       final face = faces.first;
       selfieCaptureUiNotifier.setFaceDetected(true);
+      ref.read(thesisDebugReportProvider.notifier).recordSelfieFaceDetected(
+            true,
+          );
       await _handleChallenge(face);
     } catch (_) {
       if (!mounted) return;
@@ -245,6 +277,10 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
         statusMessage: 'We could not read your face clearly.',
         errorMessage: 'Face analysis failed. Please try again.',
       );
+      ref.read(thesisDebugReportProvider.notifier).recordSelfieStatus(
+            statusMessage: 'We could not read your face clearly.',
+            errorMessage: 'Face analysis failed. Please try again.',
+          );
     } finally {
       _isProcessingFrame = false;
     }
@@ -282,6 +318,9 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
                 widget.effectiveLivenessConfig.blinkClosedThreshold) {
           _blinkPrimed = false;
           selfieCaptureUiNotifier.markBlinkComplete();
+          ref
+              .read(thesisDebugReportProvider.notifier)
+              .recordChallengeCompleted('blink');
           _scheduleChallengeTimeout();
           HapticFeedback.mediumImpact();
         }
@@ -290,6 +329,9 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
         final yAngle = face.headEulerAngleY ?? 0;
         if (yAngle < -widget.effectiveLivenessConfig.headTurnThreshold) {
           selfieCaptureUiNotifier.markTurnLeftComplete();
+          ref
+              .read(thesisDebugReportProvider.notifier)
+              .recordChallengeCompleted('turn_left');
           _scheduleChallengeTimeout();
           HapticFeedback.mediumImpact();
         } else {
@@ -303,6 +345,9 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
         final yAngle = face.headEulerAngleY ?? 0;
         if (yAngle > widget.effectiveLivenessConfig.headTurnThreshold) {
           selfieCaptureUiNotifier.markTurnRightComplete();
+          ref
+              .read(thesisDebugReportProvider.notifier)
+              .recordChallengeCompleted('turn_right');
           _scheduleChallengeTimeout();
           HapticFeedback.mediumImpact();
         } else {
@@ -317,6 +362,9 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
         if (yAngle.abs() <=
             widget.effectiveLivenessConfig.lookStraightThreshold) {
           _challengeTimeoutTimer?.cancel();
+          ref
+              .read(thesisDebugReportProvider.notifier)
+              .recordChallengeCompleted('look_straight');
           selfieCaptureUiNotifier.startAutoCapture();
           HapticFeedback.selectionClick();
           await _captureSelfie();
@@ -351,6 +399,11 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
           helperMessage:
               'Bring your face back into the oval and redo the check.',
         );
+        ref.read(thesisDebugReportProvider.notifier).recordSelfieStatus(
+              statusMessage: 'No face detected. Try again.',
+              errorMessage: 'No face detected. Try again.',
+              incrementRedo: true,
+            );
         HapticFeedback.lightImpact();
         ToastUtil.showErrorToast('No face detected. Try again.');
         await _startImageStream();
@@ -358,6 +411,9 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
       }
 
       selfieCaptureUiNotifier.completeFlow();
+      ref
+          .read(thesisDebugReportProvider.notifier)
+          .recordSelfieCapture(file.path);
       HapticFeedback.heavyImpact();
       Navigator.of(context).push(
         MaterialPageRoute(
@@ -375,6 +431,11 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
         errorMessage: 'Selfie capture failed. Try again.',
         helperMessage: 'Redo the liveness check and keep the phone steady.',
       );
+      ref.read(thesisDebugReportProvider.notifier).recordSelfieStatus(
+            statusMessage: 'Capture failed. Please try again.',
+            errorMessage: 'Selfie capture failed. Try again.',
+            incrementRedo: true,
+          );
       HapticFeedback.lightImpact();
       ToastUtil.showErrorToast('Selfie capture failed. Try again.');
       await _startImageStream();
@@ -398,6 +459,12 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
               statusMessage: 'Liveness step timed out.',
               errorMessage: 'We could not confirm that step in time.',
               helperMessage: 'Tap redo and try the liveness check again.',
+            );
+        ref.read(thesisDebugReportProvider.notifier).recordSelfieStatus(
+              statusMessage: 'Liveness step timed out.',
+              errorMessage: 'We could not confirm that step in time.',
+              incrementRedo: true,
+              incrementTimeout: true,
             );
         HapticFeedback.lightImpact();
         unawaited(_stopImageStream());
@@ -596,6 +663,20 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
       _controller = null;
       _initializeFuture = _initCamera();
     });
+  }
+
+  Map<String, dynamic> _selfieConfigToJson(SelfieLivenessConfig config) {
+    return {
+      'resolution_preset': config.resolutionPreset.name,
+      'android_image_format_group': config.androidImageFormatGroup.name,
+      'ios_image_format_group': config.iosImageFormatGroup.name,
+      'frame_stride': config.frameStride,
+      'challenge_timeout_ms': config.challengeTimeout.inMilliseconds,
+      'blink_closed_threshold': config.blinkClosedThreshold,
+      'blink_open_threshold': config.blinkOpenThreshold,
+      'head_turn_threshold': config.headTurnThreshold,
+      'look_straight_threshold': config.lookStraightThreshold,
+    };
   }
 }
 

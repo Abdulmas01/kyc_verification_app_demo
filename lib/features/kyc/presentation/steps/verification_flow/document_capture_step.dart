@@ -18,6 +18,7 @@ import 'package:permission_handler/permission_handler.dart';
 
 import '../../../domain/models/kyc_capture_bundle.dart';
 import '../../controllers/document_capture_ui_notifier.dart';
+import '../../controllers/thesis_debug_report_notifier.dart';
 import '../../models/kyc_capture_config.dart';
 import '../../widgets/document_overlay_widget.dart';
 import 'selfie_capture_step.dart';
@@ -63,6 +64,9 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
     super.initState();
     _frameStride = widget.effectiveCaptureConfig.initialFrameStride;
     WidgetsBinding.instance.addObserver(this);
+    ref.read(thesisDebugReportProvider.notifier).startRun(
+          documentConfig: _documentConfigToJson(widget.effectiveCaptureConfig),
+        );
     _objectDetector = ObjectDetector(
       options: ObjectDetectorOptions(
         mode: DetectionMode.single,
@@ -83,6 +87,11 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
     if (!mounted) return;
 
     if (!permission.isGranted) {
+      ref.read(thesisDebugReportProvider.notifier).recordDocumentFailure(
+            permission.isPermanentlyDenied || permission.isRestricted
+                ? 'Camera permission permanently denied.'
+                : 'Camera permission denied.',
+          );
       notifier.setPermissionDenied(
         permanentlyDenied:
             permission.isPermanentlyDenied || permission.isRestricted,
@@ -125,12 +134,18 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
       notifier.setCameraReady(true);
       await _startImageStream();
     } on CameraException catch (e) {
+      ref.read(thesisDebugReportProvider.notifier).recordDocumentFailure(
+            e.description ?? 'Unable to start the back camera.',
+          );
       notifier.setCameraError(
         e.code == 'CameraAccessDenied'
             ? 'Camera access was denied by the device.'
             : 'Unable to start the back camera.',
       );
     } catch (_) {
+      ref
+          .read(thesisDebugReportProvider.notifier)
+          .recordDocumentFailure('Unable to start the back camera.');
       notifier.setCameraError('Unable to start the back camera.');
     }
   }
@@ -218,6 +233,17 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
             confidence: quality.confidence,
             isGood: quality.isGood,
           );
+      ref.read(thesisDebugReportProvider.notifier).recordDocumentQuality(
+            statusMessage: quality.message,
+            qualityLabel: quality.quality.name,
+            confidence: quality.confidence,
+            accepted: quality.isGood,
+            averageInferenceMs: _avgInferenceMs == 0
+                ? stopwatch.elapsedMicroseconds / 1000
+                : _avgInferenceMs,
+            inferenceSamples: _inferenceSamples,
+            frameStride: _frameStride,
+          );
 
       _handleAutoCapture(quality.isGood);
       _recordInference(
@@ -272,6 +298,9 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
     if (isGood) {
       if (_autoCaptureTimer?.isActive ?? false) return;
       ref.read(documentCaptureUiProvider.notifier).setAutoCapturing(true);
+      ref
+          .read(thesisDebugReportProvider.notifier)
+          .markDocumentAutoCaptureTriggered();
       _autoCaptureTimer =
           Timer(widget.effectiveCaptureConfig.autoCaptureHoldDuration, () {
         ref.read(documentCaptureUiProvider.notifier).setAutoCapturing(false);
@@ -306,6 +335,9 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
       if (detectedObject == null) {
         notifier.setDocumentDetected(false);
         notifier.setError('No document detected. Try again.');
+        ref
+            .read(thesisDebugReportProvider.notifier)
+            .recordDocumentFailure('No document detected. Try again.');
         HapticFeedback.lightImpact();
         await _startImageStream();
         return;
@@ -320,6 +352,12 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
       notifier.setDocumentDetected(true);
       notifier.setStatus('Document detected. Looks good!');
       notifier.clearError();
+      ref.read(thesisDebugReportProvider.notifier).recordDocumentCapture(
+            detected: true,
+            documentPath: file.path,
+            normalizedPath: normalized.path,
+            statusMessage: 'Document detected. Looks good!',
+          );
       HapticFeedback.mediumImpact();
 
       Navigator.of(context).push(
@@ -332,6 +370,9 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
     } catch (e) {
       if (!mounted) return;
       notifier.setError('Capture failed. Please try again.');
+      ref
+          .read(thesisDebugReportProvider.notifier)
+          .recordDocumentFailure('Capture failed. Please try again.');
       ToastUtil.showErrorToast('Document capture failed. Try again.');
     } finally {
       if (mounted) {
@@ -485,6 +526,21 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
       _controller = null;
       _initializeFuture = _initCamera();
     });
+  }
+
+  Map<String, dynamic> _documentConfigToJson(DocumentCaptureConfig config) {
+    return {
+      'resolution_preset': config.resolutionPreset.name,
+      'image_format_group': config.imageFormatGroup.name,
+      'initial_frame_stride': config.initialFrameStride,
+      'min_frame_stride': config.minFrameStride,
+      'max_frame_stride': config.maxFrameStride,
+      'stride_adjustment_window': config.strideAdjustmentWindow,
+      'increase_stride_inference_ms': config.increaseStrideInferenceMs,
+      'decrease_stride_inference_ms': config.decreaseStrideInferenceMs,
+      'auto_capture_hold_ms': config.autoCaptureHoldDuration.inMilliseconds,
+      'performance_log_every': config.performanceLogEvery,
+    };
   }
 }
 
