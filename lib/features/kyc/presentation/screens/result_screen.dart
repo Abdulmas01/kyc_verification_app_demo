@@ -87,6 +87,9 @@ class _ResultScreenState extends ConsumerState<ResultScreen> {
                         latestExport: latestExport,
                         isExporting: _isExporting,
                         onExport: _exportReport,
+                        onViewSummary: latestExport == null
+                            ? null
+                            : () => _viewSummary(latestExport.summaryText),
                         onShare: latestExport == null
                             ? null
                             : () => _shareSummary(latestExport.summaryText),
@@ -171,6 +174,15 @@ class _ResultScreenState extends ConsumerState<ResultScreen> {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Export path copied.')),
+    );
+  }
+
+  Future<void> _viewSummary(String summaryText) async {
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => _ThesisReportSummaryScreen(summaryText: summaryText),
+      ),
     );
   }
 }
@@ -280,6 +292,7 @@ class _DebugExportCard extends StatelessWidget {
     required this.latestExport,
     required this.isExporting,
     required this.onExport,
+    required this.onViewSummary,
     required this.onShare,
     required this.onCopyPath,
   });
@@ -287,6 +300,7 @@ class _DebugExportCard extends StatelessWidget {
   final ThesisReportExportResult? latestExport;
   final bool isExporting;
   final Future<void> Function() onExport;
+  final VoidCallback? onViewSummary;
   final VoidCallback? onShare;
   final VoidCallback? onCopyPath;
 
@@ -330,11 +344,22 @@ class _DebugExportCard extends StatelessWidget {
             children: [
               Expanded(
                 child: OutlinedButton(
+                  onPressed: onViewSummary,
+                  child: const Text('View summary'),
+                ),
+              ),
+              const SizedBox(width: AppSpacing.s8),
+              Expanded(
+                child: OutlinedButton(
                   onPressed: onShare,
                   child: const Text('Share summary'),
                 ),
               ),
-              const SizedBox(width: AppSpacing.s8),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.s8),
+          Row(
+            children: [
               Expanded(
                 child: OutlinedButton(
                   onPressed: onCopyPath,
@@ -344,6 +369,41 @@ class _DebugExportCard extends StatelessWidget {
             ],
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _ThesisReportSummaryScreen extends StatelessWidget {
+  const _ThesisReportSummaryScreen({required this.summaryText});
+
+  final String summaryText;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Thesis Summary'),
+        actions: [
+          IconButton(
+            onPressed: () async {
+              await Clipboard.setData(ClipboardData(text: summaryText));
+              if (!context.mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Summary copied.')),
+              );
+            },
+            icon: const Icon(Icons.copy_all_outlined),
+            tooltip: 'Copy summary',
+          ),
+        ],
+      ),
+      body: Padding(
+        padding: AppSpacing.pad16,
+        child: SelectableText(
+          summaryText,
+          style: context.textTheme.bodyMedium,
+        ),
       ),
     );
   }
