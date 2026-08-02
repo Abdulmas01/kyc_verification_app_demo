@@ -26,6 +26,7 @@ import 'package:flutter/services.dart';
 
 import '../../../domain/models/kyc_capture_bundle.dart';
 import '../../controllers/selfie_capture_ui_notifier.dart';
+import '../../models/kyc_capture_config.dart';
 import '../../models/selfie_capture_ui_state.dart';
 import 'processing_step.dart';
 
@@ -42,6 +43,8 @@ class SelfieCaptureStep extends ConsumerStatefulWidget {
 
 class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
     with WidgetsBindingObserver {
+  static const _livenessConfig = SelfieLivenessConfig.balanced();
+
   CameraController? _controller;
   Future<void>? _initializeFuture;
   bool _isStreaming = false;
@@ -50,13 +53,6 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
   bool _capturingSelfie = false;
   int _frameCounter = 0;
   Timer? _challengeTimeoutTimer;
-
-  static const int _frameStride = 4;
-  static const double _blinkClosedThreshold = 0.25;
-  static const double _blinkOpenThreshold = 0.7;
-  static const double _headTurnThreshold = 18;
-  static const double _lookStraightThreshold = 8;
-  static const Duration _challengeTimeout = Duration(seconds: 12);
 
   late final FaceDetector _faceDetector;
 
@@ -106,11 +102,11 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
 
       final controller = CameraController(
         frontCamera,
-        ResolutionPreset.high,
+        _livenessConfig.resolutionPreset,
         enableAudio: false,
         imageFormatGroup: Platform.isIOS
-            ? ImageFormatGroup.bgra8888
-            : ImageFormatGroup.yuv420,
+            ? _livenessConfig.iosImageFormatGroup
+            : _livenessConfig.androidImageFormatGroup,
       );
 
       await controller.initialize();
@@ -188,7 +184,7 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
     await _controller!.startImageStream((cameraImage) {
       if (!mounted || _capturingSelfie) return;
       _frameCounter++;
-      if (_frameCounter % _frameStride != 0) return;
+      if (_frameCounter % _livenessConfig.frameStride != 0) return;
       if (_isProcessingFrame) return;
 
       _isProcessingFrame = true;
@@ -260,8 +256,8 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
           return;
         }
 
-        if (leftEyeOpen > _blinkOpenThreshold &&
-            rightEyeOpen > _blinkOpenThreshold) {
+        if (leftEyeOpen > _livenessConfig.blinkOpenThreshold &&
+            rightEyeOpen > _livenessConfig.blinkOpenThreshold) {
           _blinkPrimed = true;
           selfieCaptureUiNotifier.setChallengeMessage(
             'Blink naturally to continue.',
@@ -271,8 +267,8 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
         }
 
         if (_blinkPrimed &&
-            leftEyeOpen < _blinkClosedThreshold &&
-            rightEyeOpen < _blinkClosedThreshold) {
+            leftEyeOpen < _livenessConfig.blinkClosedThreshold &&
+            rightEyeOpen < _livenessConfig.blinkClosedThreshold) {
           _blinkPrimed = false;
           selfieCaptureUiNotifier.markBlinkComplete();
           _scheduleChallengeTimeout();
@@ -281,7 +277,7 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
         return;
       case SelfieLivenessChallenge.turnLeft:
         final yAngle = face.headEulerAngleY ?? 0;
-        if (yAngle < -_headTurnThreshold) {
+        if (yAngle < -_livenessConfig.headTurnThreshold) {
           selfieCaptureUiNotifier.markTurnLeftComplete();
           _scheduleChallengeTimeout();
           HapticFeedback.mediumImpact();
@@ -294,7 +290,7 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
         return;
       case SelfieLivenessChallenge.turnRight:
         final yAngle = face.headEulerAngleY ?? 0;
-        if (yAngle > _headTurnThreshold) {
+        if (yAngle > _livenessConfig.headTurnThreshold) {
           selfieCaptureUiNotifier.markTurnRightComplete();
           _scheduleChallengeTimeout();
           HapticFeedback.mediumImpact();
@@ -307,7 +303,7 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
         return;
       case SelfieLivenessChallenge.lookStraight:
         final yAngle = face.headEulerAngleY ?? 0;
-        if (yAngle.abs() <= _lookStraightThreshold) {
+        if (yAngle.abs() <= _livenessConfig.lookStraightThreshold) {
           _challengeTimeoutTimer?.cancel();
           selfieCaptureUiNotifier.startAutoCapture();
           HapticFeedback.selectionClick();
@@ -380,7 +376,7 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
 
   void _scheduleChallengeTimeout() {
     _challengeTimeoutTimer?.cancel();
-    _challengeTimeoutTimer = Timer(_challengeTimeout, () {
+    _challengeTimeoutTimer = Timer(_livenessConfig.challengeTimeout, () {
       if (!mounted || _capturingSelfie) return;
       final uiState = ref.read(selfieCaptureUiProvider);
       if (uiState.isChallengeComplete || uiState.shouldRedo) return;

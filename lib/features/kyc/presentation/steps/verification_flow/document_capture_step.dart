@@ -18,6 +18,7 @@ import 'package:permission_handler/permission_handler.dart';
 
 import '../../../domain/models/kyc_capture_bundle.dart';
 import '../../controllers/document_capture_ui_notifier.dart';
+import '../../models/kyc_capture_config.dart';
 import '../../widgets/document_overlay_widget.dart';
 import 'selfie_capture_step.dart';
 
@@ -33,6 +34,8 @@ class DocumentCaptureStep extends ConsumerStatefulWidget {
 
 class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
     with WidgetsBindingObserver {
+  static const _captureConfig = DocumentCaptureConfig.balanced();
+
   CameraController? _controller;
   Future<void>? _initializeFuture;
   late final ObjectDetector _objectDetector;
@@ -42,13 +45,10 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
   int _frameCounter = 0;
   QualityIsolate? _qualityIsolate;
 
-  static const int _minStride = 3;
-  static const int _maxStride = 8;
-  int _frameStride = 5;
+  int _frameStride = _captureConfig.initialFrameStride;
   int _strideAdjustCounter = 0;
   double _avgInferenceMs = 0;
   int _inferenceSamples = 0;
-  static const int _logEvery = 30;
 
   @override
   void initState() {
@@ -97,9 +97,9 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
 
       final controller = CameraController(
         backCamera,
-        ResolutionPreset.medium,
+        _captureConfig.resolutionPreset,
         enableAudio: false,
-        imageFormatGroup: ImageFormatGroup.yuv420,
+        imageFormatGroup: _captureConfig.imageFormatGroup,
       );
 
       await controller.initialize();
@@ -154,6 +154,7 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
 
   Future<void> _pauseCamera() async {
     _autoCaptureTimer?.cancel();
+    _frameStride = _captureConfig.initialFrameStride;
     _isProcessingFrame = false;
     if (_controller?.value.isStreamingImages ?? false) {
       await _controller?.stopImageStream();
@@ -229,16 +230,18 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
         ((_avgInferenceMs * (_inferenceSamples - 1)) + ms) / _inferenceSamples;
 
     _strideAdjustCounter++;
-    if (_strideAdjustCounter >= 10) {
-      if (_avgInferenceMs > 80 && _frameStride < _maxStride) {
+    if (_strideAdjustCounter >= _captureConfig.strideAdjustmentWindow) {
+      if (_avgInferenceMs > _captureConfig.increaseStrideInferenceMs &&
+          _frameStride < _captureConfig.maxFrameStride) {
         _frameStride++;
-      } else if (_avgInferenceMs < 40 && _frameStride > _minStride) {
+      } else if (_avgInferenceMs < _captureConfig.decreaseStrideInferenceMs &&
+          _frameStride > _captureConfig.minFrameStride) {
         _frameStride--;
       }
       _strideAdjustCounter = 0;
     }
 
-    if (_inferenceSamples % _logEvery == 0) {
+    if (_inferenceSamples % _captureConfig.performanceLogEvery == 0) {
       logPrint(
         'DocQuality avg inference: ${_avgInferenceMs.toStringAsFixed(1)}ms '
         '(stride=$_frameStride)',
@@ -256,7 +259,7 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
     if (isGood) {
       if (_autoCaptureTimer?.isActive ?? false) return;
       ref.read(documentCaptureUiProvider.notifier).setAutoCapturing(true);
-      _autoCaptureTimer = Timer(const Duration(milliseconds: 1500), () {
+      _autoCaptureTimer = Timer(_captureConfig.autoCaptureHoldDuration, () {
         ref.read(documentCaptureUiProvider.notifier).setAutoCapturing(false);
         _captureAndDetect();
       });
