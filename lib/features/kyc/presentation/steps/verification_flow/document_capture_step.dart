@@ -23,9 +23,14 @@ import '../../widgets/document_overlay_widget.dart';
 import 'selfie_capture_step.dart';
 
 class DocumentCaptureStep extends ConsumerStatefulWidget {
-  const DocumentCaptureStep({super.key});
+  const DocumentCaptureStep({
+    super.key,
+    this.captureConfig = const DocumentCaptureConfig.balanced(),
+  });
 
   static const String path = '/kyc/document';
+
+  final DocumentCaptureConfig captureConfig;
 
   @override
   ConsumerState<DocumentCaptureStep> createState() =>
@@ -34,8 +39,6 @@ class DocumentCaptureStep extends ConsumerStatefulWidget {
 
 class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
     with WidgetsBindingObserver {
-  static const _captureConfig = DocumentCaptureConfig.balanced();
-
   CameraController? _controller;
   Future<void>? _initializeFuture;
   late final ObjectDetector _objectDetector;
@@ -45,7 +48,7 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
   int _frameCounter = 0;
   QualityIsolate? _qualityIsolate;
 
-  int _frameStride = _captureConfig.initialFrameStride;
+  late int _frameStride;
   int _strideAdjustCounter = 0;
   double _avgInferenceMs = 0;
   int _inferenceSamples = 0;
@@ -53,6 +56,7 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
   @override
   void initState() {
     super.initState();
+    _frameStride = widget.captureConfig.initialFrameStride;
     WidgetsBinding.instance.addObserver(this);
     _objectDetector = ObjectDetector(
       options: ObjectDetectorOptions(
@@ -97,9 +101,9 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
 
       final controller = CameraController(
         backCamera,
-        _captureConfig.resolutionPreset,
+        widget.captureConfig.resolutionPreset,
         enableAudio: false,
-        imageFormatGroup: _captureConfig.imageFormatGroup,
+        imageFormatGroup: widget.captureConfig.imageFormatGroup,
       );
 
       await controller.initialize();
@@ -154,7 +158,7 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
 
   Future<void> _pauseCamera() async {
     _autoCaptureTimer?.cancel();
-    _frameStride = _captureConfig.initialFrameStride;
+    _frameStride = widget.captureConfig.initialFrameStride;
     _isProcessingFrame = false;
     if (_controller?.value.isStreamingImages ?? false) {
       await _controller?.stopImageStream();
@@ -230,18 +234,19 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
         ((_avgInferenceMs * (_inferenceSamples - 1)) + ms) / _inferenceSamples;
 
     _strideAdjustCounter++;
-    if (_strideAdjustCounter >= _captureConfig.strideAdjustmentWindow) {
-      if (_avgInferenceMs > _captureConfig.increaseStrideInferenceMs &&
-          _frameStride < _captureConfig.maxFrameStride) {
+    if (_strideAdjustCounter >= widget.captureConfig.strideAdjustmentWindow) {
+      if (_avgInferenceMs > widget.captureConfig.increaseStrideInferenceMs &&
+          _frameStride < widget.captureConfig.maxFrameStride) {
         _frameStride++;
-      } else if (_avgInferenceMs < _captureConfig.decreaseStrideInferenceMs &&
-          _frameStride > _captureConfig.minFrameStride) {
+      } else if (_avgInferenceMs <
+              widget.captureConfig.decreaseStrideInferenceMs &&
+          _frameStride > widget.captureConfig.minFrameStride) {
         _frameStride--;
       }
       _strideAdjustCounter = 0;
     }
 
-    if (_inferenceSamples % _captureConfig.performanceLogEvery == 0) {
+    if (_inferenceSamples % widget.captureConfig.performanceLogEvery == 0) {
       logPrint(
         'DocQuality avg inference: ${_avgInferenceMs.toStringAsFixed(1)}ms '
         '(stride=$_frameStride)',
@@ -259,7 +264,8 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
     if (isGood) {
       if (_autoCaptureTimer?.isActive ?? false) return;
       ref.read(documentCaptureUiProvider.notifier).setAutoCapturing(true);
-      _autoCaptureTimer = Timer(_captureConfig.autoCaptureHoldDuration, () {
+      _autoCaptureTimer =
+          Timer(widget.captureConfig.autoCaptureHoldDuration, () {
         ref.read(documentCaptureUiProvider.notifier).setAutoCapturing(false);
         _captureAndDetect();
       });

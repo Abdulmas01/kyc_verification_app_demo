@@ -36,6 +36,30 @@ class DocumentCaptureConfig {
         decreaseStrideInferenceMs = 40,
         autoCaptureHoldDuration = const Duration(milliseconds: 1500),
         performanceLogEvery = 30;
+
+  const DocumentCaptureConfig.fast()
+      : resolutionPreset = ResolutionPreset.low,
+        imageFormatGroup = ImageFormatGroup.yuv420,
+        initialFrameStride = 6,
+        minFrameStride = 4,
+        maxFrameStride = 9,
+        strideAdjustmentWindow = 8,
+        increaseStrideInferenceMs = 65,
+        decreaseStrideInferenceMs = 30,
+        autoCaptureHoldDuration = const Duration(milliseconds: 1200),
+        performanceLogEvery = 40;
+
+  const DocumentCaptureConfig.highQuality()
+      : resolutionPreset = ResolutionPreset.high,
+        imageFormatGroup = ImageFormatGroup.yuv420,
+        initialFrameStride = 4,
+        minFrameStride = 2,
+        maxFrameStride = 6,
+        strideAdjustmentWindow = 12,
+        increaseStrideInferenceMs = 95,
+        decreaseStrideInferenceMs = 45,
+        autoCaptureHoldDuration = const Duration(milliseconds: 1700),
+        performanceLogEvery = 20;
 }
 
 class SelfieLivenessConfig {
@@ -71,4 +95,26 @@ class SelfieLivenessConfig {
         blinkOpenThreshold = 0.7,
         headTurnThreshold = 18,
         lookStraightThreshold = 8;
+
+  const SelfieLivenessConfig.fast()
+      : resolutionPreset = ResolutionPreset.medium,
+        androidImageFormatGroup = ImageFormatGroup.yuv420,
+        iosImageFormatGroup = ImageFormatGroup.bgra8888,
+        frameStride = 5,
+        challengeTimeout = const Duration(seconds: 10),
+        blinkClosedThreshold = 0.22,
+        blinkOpenThreshold = 0.68,
+        headTurnThreshold = 16,
+        lookStraightThreshold = 10;
+
+  const SelfieLivenessConfig.highQuality()
+      : resolutionPreset = ResolutionPreset.veryHigh,
+        androidImageFormatGroup = ImageFormatGroup.yuv420,
+        iosImageFormatGroup = ImageFormatGroup.bgra8888,
+        frameStride = 3,
+        challengeTimeout = const Duration(seconds: 14),
+        blinkClosedThreshold = 0.25,
+        blinkOpenThreshold = 0.72,
+        headTurnThreshold = 20,
+        lookStraightThreshold = 7;
 }
