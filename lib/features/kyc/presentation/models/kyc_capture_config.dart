@@ -118,3 +118,25 @@ class SelfieLivenessConfig {
         headTurnThreshold = 20,
         lookStraightThreshold = 7;
 }
+
+class KycCaptureProfile {
+  final DocumentCaptureConfig documentCapture;
+  final SelfieLivenessConfig selfieLiveness;
+
+  const KycCaptureProfile({
+    required this.documentCapture,
+    required this.selfieLiveness,
+  });
+
+  const KycCaptureProfile.balanced()
+      : documentCapture = const DocumentCaptureConfig.balanced(),
+        selfieLiveness = const SelfieLivenessConfig.balanced();
+
+  const KycCaptureProfile.fast()
+      : documentCapture = const DocumentCaptureConfig.fast(),
+        selfieLiveness = const SelfieLivenessConfig.fast();
+
+  const KycCaptureProfile.highQuality()
+      : documentCapture = const DocumentCaptureConfig.highQuality(),
+        selfieLiveness = const SelfieLivenessConfig.highQuality();
+}
