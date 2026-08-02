@@ -8,8 +8,10 @@ import 'package:kyc_verification_app_demo/core/theme/app_spacing.dart';
 import 'package:kyc_verification_app_demo/core/widget/button_widget.dart';
 
 import '../../screens/result_screen.dart';
+import '../../controllers/processing_ui_notifier.dart';
 import '../../controllers/verification_api_notifier.dart';
 import '../../../domain/models/kyc_capture_bundle.dart';
+import '../../models/processing_ui_state.dart';
 import '../../models/verification_api_state.dart';
 
 class ProcessingStep extends ConsumerStatefulWidget {
@@ -24,9 +26,6 @@ class ProcessingStep extends ConsumerStatefulWidget {
 }
 
 class _ProcessingStepState extends ConsumerState<ProcessingStep> {
-  static const int maxAttempts = 3;
-  bool _navigated = false;
-  int _attempts = 0;
   @override
   void initState() {
     super.initState();
@@ -36,9 +35,9 @@ class _ProcessingStepState extends ConsumerState<ProcessingStep> {
   }
 
   Future<void> _startVerification() async {
-    if (_attempts >= maxAttempts) return;
-    _attempts += 1;
-    _navigated = false;
+    final processingUiNotifier = ref.read(processingUiProvider.notifier);
+    if (!processingUiNotifier.registerAttempt()) return;
+
     final documentPath = widget.captureBundle.documentPath;
     final selfiePath = widget.captureBundle.selfiePath;
     if (selfiePath == null || selfiePath.isEmpty) {
@@ -53,13 +52,18 @@ class _ProcessingStepState extends ConsumerState<ProcessingStep> {
   @override
   Widget build(BuildContext context) {
     final apiState = ref.watch(verificationApiProvider);
-    final canRetry = _attempts < maxAttempts;
+    final processingUiState = ref.watch(processingUiProvider);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Processing')),
-      body: Padding(
-        padding: AppSpacing.pad16,
-        child: _buildBody(context, apiState, canRetry),
+      body: PopScope(
+        onPopInvokedWithResult: (_, __) {
+          ref.read(verificationApiProvider.notifier).clear();
+        },
+        child: Padding(
+          padding: AppSpacing.pad16,
+          child: _buildBody(context, apiState, processingUiState),
+        ),
       ),
     );
   }
@@ -67,7 +71,7 @@ class _ProcessingStepState extends ConsumerState<ProcessingStep> {
   Widget _buildBody(
     BuildContext context,
     VerificationApiState apiState,
-    bool canRetry,
+    ProcessingUiState processingUiState,
   ) {
     switch (apiState.status) {
       case VerificationApiStatus.idle:
@@ -82,8 +86,8 @@ class _ProcessingStepState extends ConsumerState<ProcessingStep> {
           return _buildLoading(context);
         }
 
-        if (!_navigated) {
-          _navigated = true;
+        if (!processingUiState.hasNavigated) {
+          ref.read(processingUiProvider.notifier).markNavigated();
           WidgetsBinding.instance.addPostFrameCallback((_) {
             Navigator.of(context).pushReplacement(
               MaterialPageRoute(
@@ -95,12 +99,12 @@ class _ProcessingStepState extends ConsumerState<ProcessingStep> {
 
         return _buildLoading(context);
       case VerificationApiStatus.timeout:
-        return _buildTimeout(context, canRetry: canRetry);
+        return _buildTimeout(context, canRetry: processingUiState.canRetry);
       case VerificationApiStatus.error:
         return _buildError(
           context,
           apiState.error?.toString() ?? 'Unknown error',
-          canRetry: canRetry,
+          canRetry: processingUiState.canRetry,
         );
     }
   }
