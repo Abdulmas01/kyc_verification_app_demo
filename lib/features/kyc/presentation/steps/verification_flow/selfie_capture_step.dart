@@ -49,12 +49,14 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
   bool _blinkPrimed = false;
   bool _capturingSelfie = false;
   int _frameCounter = 0;
+  Timer? _challengeTimeoutTimer;
 
   static const int _frameStride = 4;
   static const double _blinkClosedThreshold = 0.25;
   static const double _blinkOpenThreshold = 0.7;
   static const double _headTurnThreshold = 18;
   static const double _lookStraightThreshold = 8;
+  static const Duration _challengeTimeout = Duration(seconds: 12);
 
   late final FaceDetector _faceDetector;
 
@@ -120,6 +122,7 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
         _controller = controller;
       });
       notifier.setCameraReady(true);
+      _scheduleChallengeTimeout();
       await _startImageStream();
     } on CameraException catch (e) {
       notifier.setCameraError(
@@ -135,6 +138,7 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _challengeTimeoutTimer?.cancel();
     unawaited(_stopImageStream());
     _controller?.dispose();
     _faceDetector.close();
@@ -158,6 +162,7 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
   }
 
   Future<void> _pauseCamera() async {
+    _challengeTimeoutTimer?.cancel();
     _isProcessingFrame = false;
     await _stopImageStream();
   }
@@ -173,6 +178,7 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
       return;
     }
     if (!_isStreaming && !_capturingSelfie) {
+      _scheduleChallengeTimeout();
       await _startImageStream();
     }
   }
@@ -249,6 +255,7 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
         if (leftEyeOpen == null || rightEyeOpen == null) {
           selfieCaptureUiNotifier.setChallengeMessage(
             'Keep your face well lit, then blink naturally.',
+            helperMessage: 'Make sure your eyes are fully visible.',
           );
           return;
         }
@@ -258,6 +265,7 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
           _blinkPrimed = true;
           selfieCaptureUiNotifier.setChallengeMessage(
             'Blink naturally to continue.',
+            helperMessage: 'We are waiting for one natural blink.',
           );
           return;
         }
@@ -267,6 +275,7 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
             rightEyeOpen < _blinkClosedThreshold) {
           _blinkPrimed = false;
           selfieCaptureUiNotifier.markBlinkComplete();
+          _scheduleChallengeTimeout();
           HapticFeedback.mediumImpact();
         }
         return;
@@ -274,10 +283,12 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
         final yAngle = face.headEulerAngleY ?? 0;
         if (yAngle < -_headTurnThreshold) {
           selfieCaptureUiNotifier.markTurnLeftComplete();
+          _scheduleChallengeTimeout();
           HapticFeedback.mediumImpact();
         } else {
           selfieCaptureUiNotifier.setChallengeMessage(
             'Slowly turn your head to the left.',
+            helperMessage: 'Move just enough so your face angle changes.',
           );
         }
         return;
@@ -285,22 +296,26 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
         final yAngle = face.headEulerAngleY ?? 0;
         if (yAngle > _headTurnThreshold) {
           selfieCaptureUiNotifier.markTurnRightComplete();
+          _scheduleChallengeTimeout();
           HapticFeedback.mediumImpact();
         } else {
           selfieCaptureUiNotifier.setChallengeMessage(
             'Now turn your head to the right.',
+            helperMessage: 'Keep your face inside the oval while turning.',
           );
         }
         return;
       case SelfieLivenessChallenge.lookStraight:
         final yAngle = face.headEulerAngleY ?? 0;
         if (yAngle.abs() <= _lookStraightThreshold) {
+          _challengeTimeoutTimer?.cancel();
           selfieCaptureUiNotifier.startAutoCapture();
           HapticFeedback.selectionClick();
           await _captureSelfie();
         } else {
           selfieCaptureUiNotifier.setChallengeMessage(
             'Look straight at the camera and hold still.',
+            helperMessage: 'We are capturing your final frame.',
           );
         }
         return;
@@ -322,9 +337,11 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
 
       if (!mounted) return;
       if (faces.isEmpty) {
-        selfieCaptureUiNotifier.setError(
+        selfieCaptureUiNotifier.requestRedo(
           statusMessage: 'No face detected. Try again.',
           errorMessage: 'No face detected. Try again.',
+          helperMessage:
+              'Bring your face back into the oval and redo the check.',
         );
         HapticFeedback.lightImpact();
         ToastUtil.showErrorToast('No face detected. Try again.');
@@ -345,20 +362,36 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
       );
     } catch (e) {
       if (!mounted) return;
-      selfieCaptureUiNotifier.setError(
+      selfieCaptureUiNotifier.requestRedo(
         statusMessage: 'Capture failed. Please try again.',
         errorMessage: 'Selfie capture failed. Try again.',
+        helperMessage: 'Redo the liveness check and keep the phone steady.',
       );
       HapticFeedback.lightImpact();
       ToastUtil.showErrorToast('Selfie capture failed. Try again.');
       await _startImageStream();
     } finally {
       _capturingSelfie = false;
-      if (mounted && ref.read(selfieCaptureUiProvider).hasError) {
-        selfieCaptureUiNotifier.resetFlow();
-        await _startImageStream();
+      if (mounted && ref.read(selfieCaptureUiProvider).shouldRedo) {
+        await _stopImageStream();
       }
     }
+  }
+
+  void _scheduleChallengeTimeout() {
+    _challengeTimeoutTimer?.cancel();
+    _challengeTimeoutTimer = Timer(_challengeTimeout, () {
+      if (!mounted || _capturingSelfie) return;
+      final uiState = ref.read(selfieCaptureUiProvider);
+      if (uiState.isChallengeComplete || uiState.shouldRedo) return;
+      ref.read(selfieCaptureUiProvider.notifier).requestRedo(
+            statusMessage: 'Liveness step timed out.',
+            errorMessage: 'We could not confirm that step in time.',
+            helperMessage: 'Tap redo and try the liveness check again.',
+          );
+      HapticFeedback.lightImpact();
+      unawaited(_stopImageStream());
+    });
   }
 
   InputImage? _inputImageFromCameraImage(CameraImage image) {
@@ -447,7 +480,7 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
             const SizedBox(height: AppSpacing.s16),
             _ChallengeProgressCard(uiState: uiState),
             const SizedBox(height: AppSpacing.s12),
-            Text(uiState.statusMessage, style: context.textTheme.bodySmall),
+            _ChallengeStatusBanner(uiState: uiState),
             if (uiState.hasError) ...[
               const SizedBox(height: AppSpacing.s8),
               _ErrorBanner(message: uiState.errorMessage ?? ''),
@@ -519,7 +552,9 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
                     : (uiState.isPermissionDenied ||
                             uiState.cameraErrorMessage != null)
                         ? 'Retry camera'
-                        : 'Restart liveness check',
+                        : uiState.shouldRedo
+                            ? 'Redo liveness check'
+                            : 'Restart liveness check',
                 enabled: !uiState.isAutoCapturing,
                 onTap: uiState.isPermissionDenied ||
                         uiState.cameraErrorMessage != null
@@ -527,6 +562,8 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
                     : () {
                         ref.read(selfieCaptureUiProvider.notifier).resetFlow();
                         _blinkPrimed = false;
+                        _scheduleChallengeTimeout();
+                        unawaited(_startImageStream());
                         HapticFeedback.selectionClick();
                       },
               ),
@@ -540,6 +577,7 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
   Future<void> _retryCameraSetup() async {
     _blinkPrimed = false;
     _capturingSelfie = false;
+    _challengeTimeoutTimer?.cancel();
     await _stopImageStream();
     await _controller?.dispose();
     if (!mounted) return;
@@ -547,6 +585,73 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
       _controller = null;
       _initializeFuture = _initCamera();
     });
+  }
+}
+
+class _ChallengeStatusBanner extends StatelessWidget {
+  const _ChallengeStatusBanner({required this.uiState});
+
+  final SelfieCaptureUiState uiState;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final (background, foreground, icon) = switch (uiState.challengeTone) {
+      SelfieChallengeTone.success => (
+          colors.primaryContainer,
+          colors.onPrimaryContainer,
+          Icons.check_circle,
+        ),
+      SelfieChallengeTone.error => (
+          colors.errorContainer,
+          colors.onErrorContainer,
+          Icons.error,
+        ),
+      SelfieChallengeTone.neutral => (
+          colors.surfaceContainerHighest,
+          colors.onSurfaceVariant,
+          Icons.info,
+        ),
+    };
+
+    return Container(
+      width: double.infinity,
+      padding: AppSpacing.padH16V12,
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: foreground, size: 20),
+          const SizedBox(width: AppSpacing.s8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  uiState.statusMessage,
+                  style: context.textTheme.bodyMedium?.copyWith(
+                    color: foreground,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                if (uiState.helperMessage != null) ...[
+                  const SizedBox(height: AppSpacing.s4),
+                  Text(
+                    uiState.helperMessage!,
+                    style: context.textTheme.bodySmall?.copyWith(
+                      color: foreground,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 

@@ -16,6 +16,7 @@ class SelfieCaptureUiNotifier
     state = state.copyWith(
       isCameraReady: value,
       cameraErrorMessage: value ? null : state.cameraErrorMessage,
+      challengeTone: SelfieChallengeTone.neutral,
     );
   }
 
@@ -31,6 +32,8 @@ class SelfieCaptureUiNotifier
           : 'Camera access is required for selfie capture.',
       errorMessage: null,
       statusMessage: 'Allow camera access to continue.',
+      helperMessage: null,
+      challengeTone: SelfieChallengeTone.error,
     );
   }
 
@@ -44,6 +47,7 @@ class SelfieCaptureUiNotifier
       isPermissionDenied: false,
       isPermanentlyDenied: false,
       cameraErrorMessage: null,
+      challengeTone: SelfieChallengeTone.neutral,
     );
   }
 
@@ -55,13 +59,18 @@ class SelfieCaptureUiNotifier
       cameraErrorMessage: message,
       errorMessage: null,
       statusMessage: 'Camera unavailable.',
+      helperMessage: null,
+      challengeTone: SelfieChallengeTone.error,
     );
   }
 
-  void setChallengeMessage(String message) {
+  void setChallengeMessage(String message, {String? helperMessage}) {
     state = state.copyWith(
       statusMessage: message,
+      helperMessage: helperMessage,
       errorMessage: null,
+      challengeTone: SelfieChallengeTone.neutral,
+      shouldRedo: false,
     );
   }
 
@@ -69,8 +78,11 @@ class SelfieCaptureUiNotifier
     state = state.copyWith(
       completedChallenges: 1,
       currentChallenge: SelfieLivenessChallenge.turnLeft,
-      statusMessage: 'Great. Now slowly turn your head to the left.',
+      statusMessage: 'Blink captured.',
+      helperMessage: 'Now slowly turn your head to the left.',
       errorMessage: null,
+      challengeTone: SelfieChallengeTone.success,
+      shouldRedo: false,
     );
   }
 
@@ -78,8 +90,11 @@ class SelfieCaptureUiNotifier
     state = state.copyWith(
       completedChallenges: 2,
       currentChallenge: SelfieLivenessChallenge.turnRight,
-      statusMessage: 'Nice. Now slowly turn your head to the right.',
+      statusMessage: 'Left turn captured.',
+      helperMessage: 'Now slowly turn your head to the right.',
       errorMessage: null,
+      challengeTone: SelfieChallengeTone.success,
+      shouldRedo: false,
     );
   }
 
@@ -87,8 +102,11 @@ class SelfieCaptureUiNotifier
     state = state.copyWith(
       completedChallenges: 3,
       currentChallenge: SelfieLivenessChallenge.lookStraight,
-      statusMessage: 'Perfect. Look straight and hold still.',
+      statusMessage: 'Right turn captured.',
+      helperMessage: 'Look straight at the camera and hold still.',
       errorMessage: null,
+      challengeTone: SelfieChallengeTone.success,
+      shouldRedo: false,
     );
   }
 
@@ -97,7 +115,9 @@ class SelfieCaptureUiNotifier
       isAutoCapturing: true,
       isDetecting: true,
       statusMessage: 'Hold steady. Capturing your best selfie...',
+      helperMessage: 'Almost done.',
       errorMessage: null,
+      challengeTone: SelfieChallengeTone.success,
     );
   }
 
@@ -106,19 +126,27 @@ class SelfieCaptureUiNotifier
       isDetecting: true,
       isAutoCapturing: true,
       statusMessage: 'Capturing your selfie...',
+      helperMessage: 'Please hold still.',
       errorMessage: null,
+      challengeTone: SelfieChallengeTone.success,
     );
   }
 
   void setError({
     required String statusMessage,
     required String errorMessage,
+    String? helperMessage,
+    bool shouldRedo = false,
   }) {
     state = state.copyWith(
       isDetecting: false,
       isAutoCapturing: false,
       statusMessage: statusMessage,
+      helperMessage: helperMessage,
       errorMessage: errorMessage,
+      challengeTone: SelfieChallengeTone.error,
+      failedAttempts: state.failedAttempts + 1,
+      shouldRedo: shouldRedo,
     );
   }
 
@@ -128,7 +156,27 @@ class SelfieCaptureUiNotifier
       isAutoCapturing: false,
       currentChallenge: SelfieLivenessChallenge.complete,
       statusMessage: 'Liveness check complete.',
+      helperMessage: 'Your selfie was captured successfully.',
       errorMessage: null,
+      challengeTone: SelfieChallengeTone.success,
+      shouldRedo: false,
+    );
+  }
+
+  void requestRedo({
+    required String statusMessage,
+    required String errorMessage,
+    String? helperMessage,
+  }) {
+    state = state.copyWith(
+      isDetecting: false,
+      isAutoCapturing: false,
+      statusMessage: statusMessage,
+      helperMessage: helperMessage,
+      errorMessage: errorMessage,
+      challengeTone: SelfieChallengeTone.error,
+      failedAttempts: state.failedAttempts + 1,
+      shouldRedo: true,
     );
   }
 
@@ -142,8 +190,11 @@ class SelfieCaptureUiNotifier
       completedChallenges: 0,
       currentChallenge: SelfieLivenessChallenge.blink,
       statusMessage: 'Blink naturally to begin the liveness check.',
+      helperMessage: 'We will guide you through three quick checks.',
       cameraErrorMessage: null,
       errorMessage: null,
+      challengeTone: SelfieChallengeTone.neutral,
+      shouldRedo: false,
     );
   }
 }
