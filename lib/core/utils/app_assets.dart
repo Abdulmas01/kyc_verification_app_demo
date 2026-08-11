@@ -9,4 +9,6 @@ class AppAssets {
   static const String docQualityModel = "assets/models/doc_quality.tflite";
   static const String livenessShadowModel =
       "assets/models/liveness_shadow.tflite";
+  static const String livenessShadowContract =
+      "assets/models/liveness_shadow_contract.json";
 }

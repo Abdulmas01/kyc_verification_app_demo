@@ -1,8 +1,9 @@
-import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:image/image.dart' as img;
 
+import '../vision/single_face_cropper.dart';
+import 'liveness_shadow_contract.dart';
 import 'model_loader.dart';
 
 class LivenessShadowPrediction {
@@ -24,14 +25,17 @@ class LivenessShadowModel {
     final interpreter = await ModelLoader.loadOptionalLivenessShadow();
     if (interpreter == null) return null;
 
-    final bytes = await File(path).readAsBytes();
-    final image = img.decodeImage(bytes);
-    if (image == null) {
-      throw Exception('Unable to decode selfie image for liveness shadow.');
-    }
-
-    final resized = img.copyResize(image, width: 128, height: 128);
-    final input = _imageToTensor(resized);
+    final contract = await LivenessShadowContract.load();
+    final cropResult = await SingleFaceCropper.cropFromFile(path);
+    final resized = img.copyResize(
+      cropResult.croppedFace,
+      width: contract.inputWidth,
+      height: contract.inputHeight,
+    );
+    final input = _imageToTensor(
+      resized,
+      normalizationMode: contract.normalizationMode,
+    );
     final output = _createOutputBuffer(interpreter.getOutputTensor(0).shape);
     final stopwatch = Stopwatch()..start();
     interpreter.run(input, output);
@@ -39,21 +43,31 @@ class LivenessShadowModel {
 
     final values = _flattenOutput(output);
     return LivenessShadowPrediction(
-      liveScore: _extractLiveScore(values),
+      liveScore: _extractLiveScore(
+        values,
+        liveClassIndex: contract.liveClassIndex,
+      ),
       latencyMs: stopwatch.elapsedMicroseconds / 1000,
     );
   }
 
-  static List<List<List<List<double>>>> _imageToTensor(img.Image image) {
+  static List<List<List<List<double>>>> _imageToTensor(
+    img.Image image, {
+    required String normalizationMode,
+  }) {
     return [
       List.generate(
-        128,
-        (y) => List.generate(128, (x) {
+        image.height,
+        (y) => List.generate(image.width, (x) {
           final pixel = image.getPixel(x, y);
+          final rgb = [pixel.r / 255.0, pixel.g / 255.0, pixel.b / 255.0];
+          if (normalizationMode == 'neg_one_to_one') {
+            return rgb.map((value) => (value * 2) - 1).toList();
+          }
           return [
-            pixel.r / 255.0,
-            pixel.g / 255.0,
-            pixel.b / 255.0,
+            rgb[0],
+            rgb[1],
+            rgb[2],
           ];
         }),
       ),
@@ -73,7 +87,10 @@ class LivenessShadowModel {
     throw StateError('Unsupported liveness shadow output.');
   }
 
-  static double _extractLiveScore(List<double> values) {
+  static double _extractLiveScore(
+    List<double> values, {
+    required int liveClassIndex,
+  }) {
     if (values.isEmpty) {
       throw StateError('Liveness shadow model returned no values.');
     }
@@ -83,6 +100,9 @@ class LivenessShadowModel {
     final maxVal = values.reduce(math.max);
     final expVals = values.map((v) => math.exp(v - maxVal)).toList();
     final sum = expVals.fold<double>(0.0, (acc, v) => acc + v);
-    return expVals[1] / sum;
+    if (liveClassIndex < 0 || liveClassIndex >= expVals.length) {
+      throw StateError('Invalid live class index for liveness shadow model.');
+    }
+    return expVals[liveClassIndex] / sum;
   }
 }
