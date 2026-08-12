@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "source_run_id": "celeba_spoof_subset_v1",
+  "artifact": "liveness_shadow.tflite",
+  "sha256": "88c61fd225f448d94a8c302e5ed677ce3636250240425344e37ff41dbec11b17",
+  "size_bytes": 6192096,
+  "mobile_role": "non_authoritative_shadow",
+  "authoritative_backend_artifact": "liveness.onnx",
+  "input": {
+    "name": "serving_default_args_0",
+    "shape": [
+      1,
+      128,
+      128,
+      3
+    ],
+    "color": "RGB",
+    "layout": "NHWC",
+    "dtype": "float32",
+    "resize": {
+      "mode": "stretch",
+      "interpolation": "bilinear"
+    },
+    "normalization": {
+      "scale": 0.00392156862745098,
+      "mean": [
+        0.485,
+        0.456,
+        0.406
+      ],
+      "std": [
+        0.229,
+        0.224,
+        0.225
+      ]
+    },
+    "performed_by": "caller_before_onnx",
+    "pipeline": "uint8_rgb_face_crop -> resize_bilinear_stretch -> float32_divide_255 -> normalize_mean_std -> nhwc"
+  },
+  "face_crop": {
+    "required": true,
+    "margin": 0.0,
+    "multiple_faces": "reject"
+  },
+  "output": {
+    "name": "serving_default_output_0_output",
+    "shape": [
+      1,
+      1
+    ],
+    "representation": "logit",
+    "activation": "sigmoid_by_caller",
+    "score": "live_probability",
+    "live_class": 1
+  },
+  "threshold": 0.993950605392456,
+  "threshold_domain": "post_sigmoid_live_probability",
+  "flutter_device_benchmark_required": true
+}

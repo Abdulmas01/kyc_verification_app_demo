@@ -47,5 +47,4 @@ app.*.map.json
 # Local ML artifacts
 /assets/models/*.tflite
 /assets/models/*.onnx
-/assets/models/*_contract.json
 !/assets/models/.gitkeep

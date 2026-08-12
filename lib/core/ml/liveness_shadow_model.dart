@@ -26,7 +26,15 @@ class LivenessShadowModel {
     if (interpreter == null) return null;
 
     final contract = await LivenessShadowContract.load();
-    final cropResult = await SingleFaceCropper.cropFromFile(path);
+    if (contract.multipleFacesPolicy != 'reject') {
+      throw StateError(
+        'Unsupported liveness shadow multiple_faces policy: ${contract.multipleFacesPolicy}',
+      );
+    }
+    final cropResult = await SingleFaceCropper.cropFromFile(
+      path,
+      paddingFactor: contract.faceCropMargin,
+    );
     final resized = img.copyResize(
       cropResult.croppedFace,
       width: contract.inputWidth,
@@ -34,7 +42,7 @@ class LivenessShadowModel {
     );
     final input = _imageToTensor(
       resized,
-      normalizationMode: contract.normalizationMode,
+      contract: contract,
     );
     final output = _createOutputBuffer(interpreter.getOutputTensor(0).shape);
     final stopwatch = Stopwatch()..start();
@@ -53,21 +61,22 @@ class LivenessShadowModel {
 
   static List<List<List<List<double>>>> _imageToTensor(
     img.Image image, {
-    required String normalizationMode,
+    required LivenessShadowContract contract,
   }) {
     return [
       List.generate(
         image.height,
         (y) => List.generate(image.width, (x) {
           final pixel = image.getPixel(x, y);
-          final rgb = [pixel.r / 255.0, pixel.g / 255.0, pixel.b / 255.0];
-          if (normalizationMode == 'neg_one_to_one') {
-            return rgb.map((value) => (value * 2) - 1).toList();
-          }
+          final rgb = [
+            pixel.r * contract.inputScale,
+            pixel.g * contract.inputScale,
+            pixel.b * contract.inputScale,
+          ];
           return [
-            rgb[0],
-            rgb[1],
-            rgb[2],
+            (rgb[0] - contract.inputMean[0]) / contract.inputStd[0],
+            (rgb[1] - contract.inputMean[1]) / contract.inputStd[1],
+            (rgb[2] - contract.inputMean[2]) / contract.inputStd[2],
           ];
         }),
       ),
