@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "source_run_id": "quality_1785108868",
+  "artifact": "doc_quality.tflite",
+  "sha256": "7adc5cb9b25166ec6891ecc5480f73e84e74f0190b823546a6bb633905ecd391",
+  "size_bytes": 2408412,
+  "classes": [
+    "GOOD",
+    "BLURRY",
+    "GLARE",
+    "DARK",
+    "NO_DOCUMENT"
+  ],
+  "input": {
+    "name": "image",
+    "shape": [
+      "N",
+      3,
+      224,
+      224
+    ],
+    "dtype": "float32",
+    "color": "RGB",
+    "normalization": "ImageNet mean/std"
+  },
+  "output": {
+    "name": "logits",
+    "classes": [
+      "GOOD",
+      "BLURRY",
+      "GLARE",
+      "DARK",
+      "NO_DOCUMENT"
+    ]
+  },
+  "flutter_device_benchmark_required": true
+}

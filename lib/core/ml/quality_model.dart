@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:image/image.dart' as img;
 import 'package:tflite_flutter/tflite_flutter.dart';
 
+import 'document_quality_contract.dart';
 import 'model_loader.dart';
 
 enum DocumentQuality { good, blurry, glare, dark, noDocument }
@@ -38,16 +39,6 @@ class QualityResult {
 }
 
 class QualityModel {
-  // IMPORTANT: This order must match the model's exported label order.
-  // If it doesn't, the UI will show the wrong guidance (e.g., blur vs dark).
-  static const List<String> _labels = [
-    'GOOD',
-    'BLURRY',
-    'GLARE',
-    'DARK',
-    'NO_DOCUMENT',
-  ];
-
   static Future<QualityResult> predictFromFile(String path) async {
     final bytes = await File(path).readAsBytes();
     final image = img.decodeImage(bytes);
@@ -59,22 +50,37 @@ class QualityModel {
   }
 
   static Future<QualityResult> predictFromImage(img.Image image) async {
-    final resized = img.copyResize(image, width: 224, height: 224);
-    final input = _imageToTensor(resized);
-    final output = List.generate(1, (_) => List.filled(5, 0.0));
+    final contract = await DocumentQualityContract.load();
+    final resized = img.copyResize(
+      image,
+      width: contract.inputWidth,
+      height: contract.inputHeight,
+    );
+    final input = _imageToTensor(resized, contract);
+    final output = List.generate(
+      1,
+      (_) => List.filled(contract.classes.length, 0.0),
+    );
 
     final Interpreter model = ModelLoader.docQuality;
     model.run(input, output);
 
     final probs = output.first.map((e) => e.toDouble()).toList();
-    return fromProbabilities(probs);
+    return fromProbabilities(probs, labels: contract.classes);
   }
 
-  static QualityResult fromProbabilities(List<double> probs) {
+  static QualityResult fromProbabilities(
+    List<double> probs, {
+    List<String>? labels,
+  }) {
     final normalized = _softmax(probs);
     final maxIdx = _argMax(normalized);
+    final activeLabels = labels ?? DocumentQualityContract.fallback.classes;
+    final safeLabel = maxIdx < activeLabels.length
+        ? activeLabels[maxIdx]
+        : DocumentQualityContract.fallback.classes[maxIdx];
     return QualityResult(
-      quality: _toQuality(_labels[maxIdx]),
+      quality: _toQuality(safeLabel),
       confidence: normalized[maxIdx],
       probabilities: normalized,
     );
@@ -111,29 +117,43 @@ class QualityModel {
   static List<double> _softmax(List<double> values) {
     if (values.isEmpty) return values;
     final maxVal = values.reduce((a, b) => a > b ? a : b);
-    final expVals = values
-        .map((v) => math.exp(v - maxVal))
-        .toList(growable: false);
+    final expVals =
+        values.map((v) => math.exp(v - maxVal)).toList(growable: false);
     final sum = expVals.fold<double>(0.0, (acc, v) => acc + v);
     if (sum == 0) return values;
     return expVals.map((v) => v / sum).toList(growable: false);
   }
 
-  static List<List<List<List<double>>>> _imageToTensor(img.Image image) {
+  static Object _imageToTensor(
+    img.Image image,
+    DocumentQualityContract contract,
+  ) {
     const mean = [0.485, 0.456, 0.406];
     const std = [0.229, 0.224, 0.225];
-    return [
-      List.generate(
-        224,
-        (y) => List.generate(224, (x) {
-          final pixel = image.getPixel(x, y);
-          return [
-            (pixel.r / 255.0 - mean[0]) / std[0],
-            (pixel.g / 255.0 - mean[1]) / std[1],
-            (pixel.b / 255.0 - mean[2]) / std[2],
-          ];
-        }),
-      ),
-    ];
+    final rgb = List.generate(
+      image.height,
+      (y) => List.generate(image.width, (x) {
+        final pixel = image.getPixel(x, y);
+        return [
+          (pixel.r / 255.0 - mean[0]) / std[0],
+          (pixel.g / 255.0 - mean[1]) / std[1],
+          (pixel.b / 255.0 - mean[2]) / std[2],
+        ];
+      }),
+    );
+
+    if (contract.layout == ModelTensorLayout.nchw) {
+      return [
+        List.generate(
+          contract.inputChannels,
+          (channel) => List.generate(
+            image.height,
+            (y) => List.generate(image.width, (x) => rgb[y][x][channel]),
+          ),
+        ),
+      ];
+    }
+
+    return [rgb];
   }
 }

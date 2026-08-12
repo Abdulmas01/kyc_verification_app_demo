@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:isolate';
-import 'dart:typed_data';
 
 import 'package:camera/camera.dart';
 import 'package:flutter/services.dart';
@@ -8,6 +7,7 @@ import 'package:image/image.dart' as img;
 import 'package:tflite_flutter/tflite_flutter.dart';
 
 import '../utils/logger.dart';
+
 class QualityIsolate {
   QualityIsolate({required this.assetPath});
 
@@ -234,16 +234,17 @@ Future<void> _entry(_IsolateConfig config) async {
   config.sendPort.send(receivePort.sendPort);
 
   final modelBytes = config.modelData.materialize().asUint8List();
-  final interpreter = await Interpreter.fromBuffer(
+  final interpreter = Interpreter.fromBuffer(
     modelBytes,
     options: InterpreterOptions()..threads = 2,
   );
 
   final inputShape = interpreter.getInputTensor(0).shape;
   final outputShape = interpreter.getOutputTensor(0).shape;
-  final inputHeight = inputShape.length > 1 ? inputShape[1] : 224;
-  final inputWidth = inputShape.length > 2 ? inputShape[2] : 224;
-  final inputChannels = inputShape.length > 3 ? inputShape[3] : 3;
+  final layout = _inferTensorLayout(inputShape);
+  final inputHeight = _inferInputHeight(inputShape, layout);
+  final inputWidth = _inferInputWidth(inputShape, layout);
+  final inputChannels = _inferInputChannels(inputShape, layout);
 
   if (inputChannels != 3) {
     throw StateError('Unsupported input channels: $inputChannels');
@@ -276,6 +277,7 @@ Future<void> _entry(_IsolateConfig config) async {
             'p1p': payload.plane1PixelStride,
             'p2r': payload.plane2RowStride,
             'p2p': payload.plane2PixelStride,
+            'layout': layout.name,
             'inputShape': inputShape,
             'outputShape': outputShape,
           },
@@ -287,7 +289,12 @@ Future<void> _entry(_IsolateConfig config) async {
         width: inputWidth,
         height: inputHeight,
       );
-      final input = _imageToTensor(resized, inputWidth, inputHeight);
+      final input = _imageToTensor(
+        resized,
+        width: inputWidth,
+        height: inputHeight,
+        layout: layout,
+      );
       final output = _createOutputBuffer(outputShape);
       interpreter.run(input, output);
       final probs = _flattenOutput(output);
@@ -390,25 +397,63 @@ img.Image _bgraToImage(_FramePayload payload) {
 }
 
 List<List<List<List<double>>>> _imageToTensor(
-  img.Image image,
-  int width,
-  int height,
-) {
+  img.Image image, {
+  required int width,
+  required int height,
+  required _TensorLayout layout,
+}) {
   const mean = [0.485, 0.456, 0.406];
   const std = [0.229, 0.224, 0.225];
-  return [
-    List.generate(
-      height,
-      (y) => List.generate(width, (x) {
-        final pixel = image.getPixel(x, y);
-        return [
-          (pixel.r / 255.0 - mean[0]) / std[0],
-          (pixel.g / 255.0 - mean[1]) / std[1],
-          (pixel.b / 255.0 - mean[2]) / std[2],
-        ];
-      }),
-    ),
-  ];
+  final rgb = List.generate(
+    height,
+    (y) => List.generate(width, (x) {
+      final pixel = image.getPixel(x, y);
+      return [
+        (pixel.r / 255.0 - mean[0]) / std[0],
+        (pixel.g / 255.0 - mean[1]) / std[1],
+        (pixel.b / 255.0 - mean[2]) / std[2],
+      ];
+    }),
+  );
+
+  if (layout == _TensorLayout.nchw) {
+    return [
+      List.generate(
+        3,
+        (channel) => List.generate(
+          height,
+          (y) => List.generate(width, (x) => rgb[y][x][channel]),
+        ),
+      ),
+    ];
+  }
+
+  return [rgb];
+}
+
+enum _TensorLayout { nchw, nhwc }
+
+_TensorLayout _inferTensorLayout(List<int> inputShape) {
+  if (inputShape.length >= 4) {
+    if (inputShape[1] == 3) return _TensorLayout.nchw;
+    if (inputShape[3] == 3) return _TensorLayout.nhwc;
+  }
+  return _TensorLayout.nhwc;
+}
+
+int _inferInputHeight(List<int> inputShape, _TensorLayout layout) {
+  if (inputShape.length < 4) return 224;
+  return layout == _TensorLayout.nchw ? inputShape[2] : inputShape[1];
+}
+
+int _inferInputWidth(List<int> inputShape, _TensorLayout layout) {
+  if (inputShape.length < 4) return 224;
+  return layout == _TensorLayout.nchw ? inputShape[3] : inputShape[2];
+}
+
+int _inferInputChannels(List<int> inputShape, _TensorLayout layout) {
+  if (inputShape.length < 4) return 3;
+  return layout == _TensorLayout.nchw ? inputShape[1] : inputShape[3];
 }
 
 dynamic _createOutputBuffer(List<int> shape) {

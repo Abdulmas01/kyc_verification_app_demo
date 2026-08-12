@@ -7,6 +7,8 @@ class AppAssets {
   static const String logoDark = "assets/images/logo.png";
   static const String logoLight = "assets/images/logo2_lightmode.png";
   static const String docQualityModel = "assets/models/doc_quality.tflite";
+  static const String docQualityContract =
+      "assets/models/doc_quality_contract.json";
   static const String livenessShadowModel =
       "assets/models/liveness_shadow.tflite";
   static const String livenessShadowContract =
