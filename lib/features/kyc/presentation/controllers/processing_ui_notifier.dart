@@ -24,6 +24,12 @@ class ProcessingUiNotifier extends AutoDisposeNotifier<ProcessingUiState> {
     state = state.copyWith(hasNavigated: true);
   }
 
+  bool registerNavigation() {
+    if (state.hasNavigated) return false;
+    state = state.copyWith(hasNavigated: true);
+    return true;
+  }
+
   void reset() {
     state = ProcessingUiState.initial(maxAttempts: state.maxAttempts);
   }

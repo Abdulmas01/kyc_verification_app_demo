@@ -64,9 +64,6 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
     super.initState();
     _frameStride = widget.effectiveCaptureConfig.initialFrameStride;
     WidgetsBinding.instance.addObserver(this);
-    ref.read(thesisDebugReportProvider.notifier).startRun(
-          documentConfig: _documentConfigToJson(widget.effectiveCaptureConfig),
-        );
     _objectDetector = ObjectDetector(
       options: ObjectDetectorOptions(
         mode: DetectionMode.single,
@@ -75,8 +72,17 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
       ),
     );
     _qualityIsolate = QualityIsolate(assetPath: AppAssets.docQualityModel);
-
-    _initializeFuture = _initCamera();
+    _initializeFuture = Future.value();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ref.read(thesisDebugReportProvider.notifier).startRun(
+            documentConfig:
+                _documentConfigToJson(widget.effectiveCaptureConfig),
+          );
+      setState(() {
+        _initializeFuture = _initCamera();
+      });
+    });
   }
 
   Future<void> _initCamera() async {

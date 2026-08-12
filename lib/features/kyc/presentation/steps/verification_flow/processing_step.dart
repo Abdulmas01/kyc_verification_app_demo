@@ -27,12 +27,41 @@ class ProcessingStep extends ConsumerStatefulWidget {
 }
 
 class _ProcessingStepState extends ConsumerState<ProcessingStep> {
+  ProviderSubscription<VerificationApiState>? _verificationListener;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _startVerification();
     });
+    _verificationListener =
+        ref.listenManual<VerificationApiState>(verificationApiProvider, (
+      previous,
+      next,
+    ) {
+      final result = next.result;
+      if (next.status != VerificationApiStatus.data || result == null) {
+        return;
+      }
+      if (!ref.read(processingUiProvider.notifier).registerNavigation()) {
+        return;
+      }
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (_) => ResultScreen(result: result),
+          ),
+        );
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _verificationListener?.close();
+    super.dispose();
   }
 
   Future<void> _startVerification() async {
@@ -89,18 +118,6 @@ class _ProcessingStepState extends ConsumerState<ProcessingStep> {
         if (result == null) {
           return _buildLoading(context);
         }
-
-        if (!processingUiState.hasNavigated) {
-          ref.read(processingUiProvider.notifier).markNavigated();
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            Navigator.of(context).pushReplacement(
-              MaterialPageRoute(
-                builder: (_) => ResultScreen(result: result),
-              ),
-            );
-          });
-        }
-
         return _buildLoading(context);
       case VerificationApiStatus.timeout:
         return _buildTimeout(context, canRetry: processingUiState.canRetry);

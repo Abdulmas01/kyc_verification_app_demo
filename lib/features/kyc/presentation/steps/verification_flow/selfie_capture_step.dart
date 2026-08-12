@@ -70,12 +70,6 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    ref.read(thesisDebugReportProvider.notifier).attachSelfieConfig(
-          _selfieConfigToJson(widget.effectiveLivenessConfig),
-        );
-    ref.read(thesisDebugReportProvider.notifier).configureMobileLivenessShadow(
-          enabled: widget.effectiveLivenessConfig.mobileShadow.enabled,
-        );
     _faceDetector = FaceDetector(
       options: FaceDetectorOptions(
         enableContours: false,
@@ -84,7 +78,21 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
         performanceMode: FaceDetectorMode.fast,
       ),
     );
-    _initializeFuture = _initCamera();
+    _initializeFuture = Future.value();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ref.read(thesisDebugReportProvider.notifier).attachSelfieConfig(
+            _selfieConfigToJson(widget.effectiveLivenessConfig),
+          );
+      ref
+          .read(thesisDebugReportProvider.notifier)
+          .configureMobileLivenessShadow(
+            enabled: widget.effectiveLivenessConfig.mobileShadow.enabled,
+          );
+      setState(() {
+        _initializeFuture = _initCamera();
+      });
+    });
   }
 
   Future<void> _initCamera() async {
