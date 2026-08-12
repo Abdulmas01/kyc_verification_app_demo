@@ -26,11 +26,8 @@ class LivenessShadowModel {
     if (interpreter == null) return null;
 
     final contract = await LivenessShadowContract.load();
-    if (contract.multipleFacesPolicy != 'reject') {
-      throw StateError(
-        'Unsupported liveness shadow multiple_faces policy: ${contract.multipleFacesPolicy}',
-      );
-    }
+    contract.validateInterpreter(interpreter);
+
     final cropResult = await SingleFaceCropper.cropFromFile(
       path,
       paddingFactor: contract.faceCropMargin,
@@ -44,7 +41,7 @@ class LivenessShadowModel {
       resized,
       contract: contract,
     );
-    final output = _createOutputBuffer(interpreter.getOutputTensor(0).shape);
+    final output = _createOutputBuffer(contract.outputShape);
     final stopwatch = Stopwatch()..start();
     interpreter.run(input, output);
     stopwatch.stop();
@@ -59,41 +56,73 @@ class LivenessShadowModel {
     );
   }
 
-  static List<List<List<List<double>>>> _imageToTensor(
+  static Object _imageToTensor(
     img.Image image, {
     required LivenessShadowContract contract,
   }) {
-    return [
-      List.generate(
-        image.height,
-        (y) => List.generate(image.width, (x) {
-          final pixel = image.getPixel(x, y);
-          final rgb = [
-            pixel.r * contract.inputScale,
-            pixel.g * contract.inputScale,
-            pixel.b * contract.inputScale,
-          ];
-          return [
-            (rgb[0] - contract.inputMean[0]) / contract.inputStd[0],
-            (rgb[1] - contract.inputMean[1]) / contract.inputStd[1],
-            (rgb[2] - contract.inputMean[2]) / contract.inputStd[2],
-          ];
-        }),
-      ),
-    ];
+    final rgb = List.generate(
+      image.height,
+      (y) => List.generate(image.width, (x) {
+        final pixel = image.getPixel(x, y);
+        return [
+          ((pixel.r * contract.normalization.scale) -
+                  contract.normalization.mean[0]) /
+              contract.normalization.std[0],
+          ((pixel.g * contract.normalization.scale) -
+                  contract.normalization.mean[1]) /
+              contract.normalization.std[1],
+          ((pixel.b * contract.normalization.scale) -
+                  contract.normalization.mean[2]) /
+              contract.normalization.std[2],
+        ];
+      }),
+    );
+
+    if (contract.layout.name == 'nchw') {
+      return [
+        List.generate(
+          contract.inputChannels,
+          (channel) => List.generate(
+            image.height,
+            (y) => List.generate(image.width, (x) => rgb[y][x][channel]),
+          ),
+        ),
+      ];
+    }
+
+    return [rgb];
   }
 
   static Object _createOutputBuffer(List<int> shape) {
-    final width = shape.isNotEmpty ? shape.last : 1;
-    return List.generate(1, (_) => List.filled(width, 0.0));
+    if (shape.isEmpty) {
+      throw StateError('Liveness shadow output shape cannot be empty.');
+    }
+    if (shape.length == 1) {
+      return List<double>.filled(shape[0], 0.0);
+    }
+    return List.generate(
+      shape[0],
+      (_) => _createOutputBuffer(shape.sublist(1)),
+    );
   }
 
   static List<double> _flattenOutput(Object output) {
-    if (output is List && output.isNotEmpty && output.first is List) {
-      final row = output.first as List;
-      return row.map((value) => (value as num).toDouble()).toList();
+    final result = <double>[];
+    void walk(Object? node) {
+      if (node is num) {
+        result.add(node.toDouble());
+      } else if (node is List) {
+        for (final item in node) {
+          walk(item);
+        }
+      }
     }
-    throw StateError('Unsupported liveness shadow output.');
+
+    walk(output);
+    if (result.isEmpty) {
+      throw StateError('Unsupported liveness shadow output.');
+    }
+    return result;
   }
 
   static double _extractLiveScore(

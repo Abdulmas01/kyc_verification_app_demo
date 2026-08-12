@@ -1,12 +1,13 @@
 import 'dart:async';
 import 'dart:isolate';
-
 import 'package:camera/camera.dart';
 import 'package:flutter/services.dart';
 import 'package:image/image.dart' as img;
 import 'package:tflite_flutter/tflite_flutter.dart';
 
 import '../utils/logger.dart';
+import 'document_quality_contract.dart';
+import 'model_contract_types.dart';
 
 class QualityIsolate {
   QualityIsolate({required this.assetPath});
@@ -42,6 +43,7 @@ class QualityIsolate {
             'p0r=${meta['p0r']}, p0p=${meta['p0p']}, '
             'p1r=${meta['p1r']}, p1p=${meta['p1p']}, '
             'p2r=${meta['p2r']}, p2p=${meta['p2p']}, '
+            'layout=${meta['layout']}, '
             'inputShape=${meta['inputShape']}, '
             'outputShape=${meta['outputShape']}',
           );
@@ -233,22 +235,18 @@ Future<void> _entry(_IsolateConfig config) async {
   final receivePort = ReceivePort();
   config.sendPort.send(receivePort.sendPort);
 
+  final contract = await DocumentQualityContract.load();
   final modelBytes = config.modelData.materialize().asUint8List();
   final interpreter = Interpreter.fromBuffer(
     modelBytes,
     options: InterpreterOptions()..threads = 2,
   );
+  contract.validateInterpreter(interpreter);
 
   final inputShape = interpreter.getInputTensor(0).shape;
   final outputShape = interpreter.getOutputTensor(0).shape;
-  final layout = _inferTensorLayout(inputShape);
-  final inputHeight = _inferInputHeight(inputShape, layout);
-  final inputWidth = _inferInputWidth(inputShape, layout);
-  final inputChannels = _inferInputChannels(inputShape, layout);
-
-  if (inputChannels != 3) {
-    throw StateError('Unsupported input channels: $inputChannels');
-  }
+  final inputHeight = contract.inputHeight;
+  final inputWidth = contract.inputWidth;
 
   var metaSent = false;
   receivePort.listen((message) {
@@ -277,7 +275,7 @@ Future<void> _entry(_IsolateConfig config) async {
             'p1p': payload.plane1PixelStride,
             'p2r': payload.plane2RowStride,
             'p2p': payload.plane2PixelStride,
-            'layout': layout.name,
+            'layout': contract.layout.name,
             'inputShape': inputShape,
             'outputShape': outputShape,
           },
@@ -291,9 +289,7 @@ Future<void> _entry(_IsolateConfig config) async {
       );
       final input = _imageToTensor(
         resized,
-        width: inputWidth,
-        height: inputHeight,
-        layout: layout,
+        contract: contract,
       );
       final output = _createOutputBuffer(outputShape);
       interpreter.run(input, output);
@@ -336,13 +332,13 @@ img.Image _yuvToImage(_FramePayload payload) {
   var idx = 0;
 
   for (int y = 0; y < payload.height; y++) {
-    final int yRow = y * payload.plane0RowStride;
-    final int uvRow = (y >> 1) * uvRowStride;
+    final yRow = y * payload.plane0RowStride;
+    final uvRow = (y >> 1) * uvRowStride;
     for (int x = 0; x < payload.width; x++) {
-      final int yp = yBytes[yRow + x];
-      final int uvIndex = uvRow + (x >> 1) * uvPixelStride;
-      final int up = uBytes[uvIndex];
-      final int vp = vBytes[uvIndex];
+      final yp = yBytes[yRow + x];
+      final uvIndex = uvRow + (x >> 1) * uvPixelStride;
+      final up = uBytes[uvIndex];
+      final vp = vBytes[uvIndex];
 
       final r = (yp + 1.402 * (vp - 128)).clamp(0, 255).toInt();
       final g = (yp - 0.344136 * (up - 128) - 0.714136 * (vp - 128))
@@ -376,12 +372,12 @@ img.Image _bgraToImage(_FramePayload payload) {
   var idx = 0;
 
   for (int y = 0; y < payload.height; y++) {
-    final int row = y * rowStride;
+    final row = y * rowStride;
     for (int x = 0; x < payload.width; x++) {
-      final int offset = row + x * pixelStride;
-      final int b = bgraBytes[offset];
-      final int g = bgraBytes[offset + 1];
-      final int r = bgraBytes[offset + 2];
+      final offset = row + x * pixelStride;
+      final b = bgraBytes[offset];
+      final g = bgraBytes[offset + 1];
+      final r = bgraBytes[offset + 2];
       rgbBytes[idx++] = r;
       rgbBytes[idx++] = g;
       rgbBytes[idx++] = b;
@@ -396,64 +392,41 @@ img.Image _bgraToImage(_FramePayload payload) {
   );
 }
 
-List<List<List<List<double>>>> _imageToTensor(
+Object _imageToTensor(
   img.Image image, {
-  required int width,
-  required int height,
-  required _TensorLayout layout,
+  required DocumentQualityContract contract,
 }) {
-  const mean = [0.485, 0.456, 0.406];
-  const std = [0.229, 0.224, 0.225];
   final rgb = List.generate(
-    height,
-    (y) => List.generate(width, (x) {
+    contract.inputHeight,
+    (y) => List.generate(contract.inputWidth, (x) {
       final pixel = image.getPixel(x, y);
       return [
-        (pixel.r / 255.0 - mean[0]) / std[0],
-        (pixel.g / 255.0 - mean[1]) / std[1],
-        (pixel.b / 255.0 - mean[2]) / std[2],
+        ((pixel.r * contract.normalization.scale) -
+                contract.normalization.mean[0]) /
+            contract.normalization.std[0],
+        ((pixel.g * contract.normalization.scale) -
+                contract.normalization.mean[1]) /
+            contract.normalization.std[1],
+        ((pixel.b * contract.normalization.scale) -
+                contract.normalization.mean[2]) /
+            contract.normalization.std[2],
       ];
     }),
   );
 
-  if (layout == _TensorLayout.nchw) {
+  if (contract.layout == ModelTensorLayout.nchw) {
     return [
       List.generate(
-        3,
+        contract.inputChannels,
         (channel) => List.generate(
-          height,
-          (y) => List.generate(width, (x) => rgb[y][x][channel]),
+          contract.inputHeight,
+          (y) => List.generate(contract.inputWidth, (x) => rgb[y][x][channel]),
         ),
       ),
     ];
   }
 
   return [rgb];
-}
-
-enum _TensorLayout { nchw, nhwc }
-
-_TensorLayout _inferTensorLayout(List<int> inputShape) {
-  if (inputShape.length >= 4) {
-    if (inputShape[1] == 3) return _TensorLayout.nchw;
-    if (inputShape[3] == 3) return _TensorLayout.nhwc;
-  }
-  return _TensorLayout.nhwc;
-}
-
-int _inferInputHeight(List<int> inputShape, _TensorLayout layout) {
-  if (inputShape.length < 4) return 224;
-  return layout == _TensorLayout.nchw ? inputShape[2] : inputShape[1];
-}
-
-int _inferInputWidth(List<int> inputShape, _TensorLayout layout) {
-  if (inputShape.length < 4) return 224;
-  return layout == _TensorLayout.nchw ? inputShape[3] : inputShape[2];
-}
-
-int _inferInputChannels(List<int> inputShape, _TensorLayout layout) {
-  if (inputShape.length < 4) return 3;
-  return layout == _TensorLayout.nchw ? inputShape[1] : inputShape[3];
 }
 
 dynamic _createOutputBuffer(List<int> shape) {

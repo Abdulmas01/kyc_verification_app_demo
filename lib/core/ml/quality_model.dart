@@ -6,6 +6,7 @@ import 'package:tflite_flutter/tflite_flutter.dart';
 
 import 'document_quality_contract.dart';
 import 'model_loader.dart';
+import 'model_contract_types.dart';
 
 enum DocumentQuality { good, blurry, glare, dark, noDocument }
 
@@ -63,6 +64,7 @@ class QualityModel {
     );
 
     final Interpreter model = ModelLoader.docQuality;
+    contract.validateInterpreter(model);
     model.run(input, output);
 
     final probs = output.first.map((e) => e.toDouble()).toList();
@@ -75,10 +77,11 @@ class QualityModel {
   }) {
     final normalized = _softmax(probs);
     final maxIdx = _argMax(normalized);
-    final activeLabels = labels ?? DocumentQualityContract.fallback.classes;
+    final activeLabels =
+        labels ?? DocumentQualityContract.developmentFallback.classes;
     final safeLabel = maxIdx < activeLabels.length
         ? activeLabels[maxIdx]
-        : DocumentQualityContract.fallback.classes[maxIdx];
+        : DocumentQualityContract.developmentFallback.classes[maxIdx];
     return QualityResult(
       quality: _toQuality(safeLabel),
       confidence: normalized[maxIdx],
@@ -128,16 +131,20 @@ class QualityModel {
     img.Image image,
     DocumentQualityContract contract,
   ) {
-    const mean = [0.485, 0.456, 0.406];
-    const std = [0.229, 0.224, 0.225];
     final rgb = List.generate(
       image.height,
       (y) => List.generate(image.width, (x) {
         final pixel = image.getPixel(x, y);
         return [
-          (pixel.r / 255.0 - mean[0]) / std[0],
-          (pixel.g / 255.0 - mean[1]) / std[1],
-          (pixel.b / 255.0 - mean[2]) / std[2],
+          ((pixel.r * contract.normalization.scale) -
+                  contract.normalization.mean[0]) /
+              contract.normalization.std[0],
+          ((pixel.g * contract.normalization.scale) -
+                  contract.normalization.mean[1]) /
+              contract.normalization.std[1],
+          ((pixel.b * contract.normalization.scale) -
+                  contract.normalization.mean[2]) /
+              contract.normalization.std[2],
         ];
       }),
     );
