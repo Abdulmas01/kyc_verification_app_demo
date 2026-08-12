@@ -11,6 +11,7 @@ class DocumentCaptureConfig {
   final double decreaseStrideInferenceMs;
   final Duration autoCaptureHoldDuration;
   final int performanceLogEvery;
+  final int guidanceStabilityFrames;
 
   const DocumentCaptureConfig({
     required this.resolutionPreset,
@@ -23,6 +24,7 @@ class DocumentCaptureConfig {
     required this.decreaseStrideInferenceMs,
     required this.autoCaptureHoldDuration,
     required this.performanceLogEvery,
+    required this.guidanceStabilityFrames,
   });
 
   const DocumentCaptureConfig.balanced()
@@ -35,7 +37,8 @@ class DocumentCaptureConfig {
         increaseStrideInferenceMs = 80,
         decreaseStrideInferenceMs = 40,
         autoCaptureHoldDuration = const Duration(milliseconds: 1500),
-        performanceLogEvery = 30;
+        performanceLogEvery = 30,
+        guidanceStabilityFrames = 3;
 
   const DocumentCaptureConfig.fast()
       : resolutionPreset = ResolutionPreset.low,
@@ -47,7 +50,8 @@ class DocumentCaptureConfig {
         increaseStrideInferenceMs = 65,
         decreaseStrideInferenceMs = 30,
         autoCaptureHoldDuration = const Duration(milliseconds: 1200),
-        performanceLogEvery = 40;
+        performanceLogEvery = 40,
+        guidanceStabilityFrames = 2;
 
   const DocumentCaptureConfig.highQuality()
       : resolutionPreset = ResolutionPreset.high,
@@ -59,7 +63,8 @@ class DocumentCaptureConfig {
         increaseStrideInferenceMs = 95,
         decreaseStrideInferenceMs = 45,
         autoCaptureHoldDuration = const Duration(milliseconds: 1700),
-        performanceLogEvery = 20;
+        performanceLogEvery = 20,
+        guidanceStabilityFrames = 4;
 }
 
 class SelfieLivenessConfig {

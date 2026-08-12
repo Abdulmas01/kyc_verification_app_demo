@@ -47,12 +47,16 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
     with WidgetsBindingObserver {
   CameraController? _controller;
   Future<void>? _initializeFuture;
+  Future<void>? _cameraSetupFuture;
   late final ObjectDetector _objectDetector;
   Timer? _autoCaptureTimer;
   bool _isStreaming = false;
   bool _isProcessingFrame = false;
   int _frameCounter = 0;
   QualityIsolate? _qualityIsolate;
+  DocumentQuality? _pendingGuidanceQuality;
+  int _pendingGuidanceCount = 0;
+  DocumentQuality? _activeGuidanceQuality;
 
   late int _frameStride;
   int _strideAdjustCounter = 0;
@@ -80,9 +84,33 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
                 _documentConfigToJson(widget.effectiveCaptureConfig),
           );
       setState(() {
-        _initializeFuture = _initCamera();
+        _initializeFuture = _ensureCameraInitialized();
       });
     });
+  }
+
+  Future<void> _ensureCameraInitialized() {
+    final existing = _cameraSetupFuture;
+    if (existing != null) return existing;
+    late final Future<void> future;
+    future = _initCamera().whenComplete(() {
+      if (identical(_cameraSetupFuture, future)) {
+        _cameraSetupFuture = null;
+      }
+    });
+    _cameraSetupFuture = future;
+    return future;
+  }
+
+  Future<void> _disposeController() async {
+    final controller = _controller;
+    _controller = null;
+    _isStreaming = false;
+    if (controller == null) return;
+    if (controller.value.isStreamingImages) {
+      await controller.stopImageStream();
+    }
+    await controller.dispose();
   }
 
   Future<void> _initCamera() async {
@@ -108,6 +136,7 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
     notifier.clearPermissionError();
 
     try {
+      await _disposeController();
       final cameras = await availableCameras();
       if (cameras.isEmpty) {
         notifier.setCameraError('No camera is available on this device.');
@@ -140,14 +169,15 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
       notifier.setCameraReady(true);
       await _startImageStream();
     } on CameraException catch (e) {
-      ref.read(thesisDebugReportProvider.notifier).recordDocumentFailure(
-            e.description ?? 'Unable to start the back camera.',
-          );
-      notifier.setCameraError(
-        e.code == 'CameraAccessDenied'
-            ? 'Camera access was denied by the device.'
-            : 'Unable to start the back camera.',
+      final userMessage = _cameraErrorMessage(
+        e.code,
+        e.description,
+        lensLabel: 'back',
       );
+      ref.read(thesisDebugReportProvider.notifier).recordDocumentFailure(
+            e.description ?? userMessage,
+          );
+      notifier.setCameraError(userMessage);
     } catch (_) {
       ref
           .read(thesisDebugReportProvider.notifier)
@@ -160,7 +190,7 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _autoCaptureTimer?.cancel();
-    _controller?.dispose();
+    unawaited(_disposeController());
     _objectDetector.close();
     _qualityIsolate?.dispose();
     super.dispose();
@@ -198,7 +228,7 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
       return;
     }
     if (_controller == null || !(_controller?.value.isInitialized ?? false)) {
-      _initializeFuture = _initCamera();
+      _initializeFuture = _ensureCameraInitialized();
       if (mounted) setState(() {});
       return;
     }
@@ -233,14 +263,16 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
       if (!mounted) return;
       if (probs == null) return;
       final quality = QualityModel.fromProbabilities(probs);
+      final guidanceQuality = _resolveGuidanceQuality(quality.quality);
+      final guidanceMessage = _messageForQuality(guidanceQuality);
 
       ref.read(documentCaptureUiProvider.notifier).updateQuality(
-            message: quality.message,
+            message: guidanceMessage,
             confidence: quality.confidence,
             isGood: quality.isGood,
           );
       ref.read(thesisDebugReportProvider.notifier).recordDocumentQuality(
-            statusMessage: quality.message,
+            statusMessage: guidanceMessage,
             qualityLabel: quality.quality.name,
             confidence: quality.confidence,
             accepted: quality.isGood,
@@ -262,6 +294,53 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
       if (!mounted) return;
     } finally {
       _isProcessingFrame = false;
+    }
+  }
+
+  DocumentQuality _resolveGuidanceQuality(DocumentQuality nextQuality) {
+    if (_activeGuidanceQuality == null) {
+      _activeGuidanceQuality = nextQuality;
+      _pendingGuidanceQuality = null;
+      _pendingGuidanceCount = 0;
+      return nextQuality;
+    }
+
+    if (nextQuality == _activeGuidanceQuality) {
+      _pendingGuidanceQuality = null;
+      _pendingGuidanceCount = 0;
+      return _activeGuidanceQuality!;
+    }
+
+    if (_pendingGuidanceQuality != nextQuality) {
+      _pendingGuidanceQuality = nextQuality;
+      _pendingGuidanceCount = 1;
+      return _activeGuidanceQuality!;
+    }
+
+    _pendingGuidanceCount++;
+    if (_pendingGuidanceCount <
+        widget.effectiveCaptureConfig.guidanceStabilityFrames) {
+      return _activeGuidanceQuality!;
+    }
+
+    _activeGuidanceQuality = nextQuality;
+    _pendingGuidanceQuality = null;
+    _pendingGuidanceCount = 0;
+    return nextQuality;
+  }
+
+  String _messageForQuality(DocumentQuality quality) {
+    switch (quality) {
+      case DocumentQuality.good:
+        return 'Hold steady for capture.';
+      case DocumentQuality.blurry:
+        return 'Hold still for a clearer capture.';
+      case DocumentQuality.glare:
+        return 'Tilt slightly to reduce glare.';
+      case DocumentQuality.dark:
+        return 'Move to better lighting.';
+      case DocumentQuality.noDocument:
+        return 'Place your ID fully inside the frame.';
     }
   }
 
@@ -525,12 +604,14 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
   Future<void> _retryCameraSetup() async {
     _autoCaptureTimer?.cancel();
     _isProcessingFrame = false;
+    _pendingGuidanceQuality = null;
+    _pendingGuidanceCount = 0;
+    _activeGuidanceQuality = null;
     await _pauseCamera();
-    await _controller?.dispose();
+    await _disposeController();
     if (!mounted) return;
     setState(() {
-      _controller = null;
-      _initializeFuture = _initCamera();
+      _initializeFuture = _ensureCameraInitialized();
     });
   }
 
@@ -546,7 +627,27 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
       'decrease_stride_inference_ms': config.decreaseStrideInferenceMs,
       'auto_capture_hold_ms': config.autoCaptureHoldDuration.inMilliseconds,
       'performance_log_every': config.performanceLogEvery,
+      'guidance_stability_frames': config.guidanceStabilityFrames,
     };
+  }
+
+  String _cameraErrorMessage(
+    String code,
+    String? description, {
+    required String lensLabel,
+  }) {
+    if (code == 'CameraAccessDenied') {
+      return 'Camera access was denied by the device.';
+    }
+    final details = description?.toLowerCase() ?? '';
+    if (details.contains('no supported surface combination') ||
+        details.contains('may be attempting to bind too many use cases')) {
+      return 'Camera session conflicted during startup. Retry camera to try again.';
+    }
+    if (details.contains('no camera') || details.contains('not available')) {
+      return 'No $lensLabel camera is available on this device.';
+    }
+    return 'Unable to start the $lensLabel camera.';
   }
 }
 

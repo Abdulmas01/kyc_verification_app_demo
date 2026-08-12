@@ -26,15 +26,15 @@ class QualityResult {
   String get message {
     switch (quality) {
       case DocumentQuality.good:
-        return 'Hold steady...';
+        return 'Hold steady for capture.';
       case DocumentQuality.blurry:
-        return 'Hold the phone still';
+        return 'Hold still for a clearer capture.';
       case DocumentQuality.glare:
-        return 'Reduce glare and adjust angle';
+        return 'Tilt slightly to reduce glare.';
       case DocumentQuality.dark:
-        return 'Move to a brighter area';
+        return 'Move to better lighting.';
       case DocumentQuality.noDocument:
-        return 'Position your ID in the frame';
+        return 'Place your ID fully inside the frame.';
     }
   }
 }

@@ -57,6 +57,7 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
     with WidgetsBindingObserver {
   CameraController? _controller;
   Future<void>? _initializeFuture;
+  Future<void>? _cameraSetupFuture;
   bool _isStreaming = false;
   bool _isProcessingFrame = false;
   bool _blinkPrimed = false;
@@ -90,9 +91,33 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
             enabled: widget.effectiveLivenessConfig.mobileShadow.enabled,
           );
       setState(() {
-        _initializeFuture = _initCamera();
+        _initializeFuture = _ensureCameraInitialized();
       });
     });
+  }
+
+  Future<void> _ensureCameraInitialized() {
+    final existing = _cameraSetupFuture;
+    if (existing != null) return existing;
+    late final Future<void> future;
+    future = _initCamera().whenComplete(() {
+      if (identical(_cameraSetupFuture, future)) {
+        _cameraSetupFuture = null;
+      }
+    });
+    _cameraSetupFuture = future;
+    return future;
+  }
+
+  Future<void> _disposeController() async {
+    final controller = _controller;
+    _controller = null;
+    _isStreaming = false;
+    if (controller == null) return;
+    if (controller.value.isStreamingImages) {
+      await controller.stopImageStream();
+    }
+    await controller.dispose();
   }
 
   Future<void> _initCamera() async {
@@ -119,6 +144,7 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
     notifier.clearPermissionError();
 
     try {
+      await _disposeController();
       final cameras = await availableCameras();
       if (cameras.isEmpty) {
         notifier.setCameraError('No camera is available on this device.');
@@ -151,14 +177,15 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
       _scheduleChallengeTimeout();
       await _startImageStream();
     } on CameraException catch (e) {
-      ref.read(thesisDebugReportProvider.notifier).recordSelfieStatus(
-            errorMessage: e.description ?? 'Unable to start the front camera.',
-          );
-      notifier.setCameraError(
-        e.code == 'CameraAccessDenied'
-            ? 'Camera access was denied by the device.'
-            : 'Unable to start the front camera.',
+      final userMessage = _cameraErrorMessage(
+        e.code,
+        e.description,
+        lensLabel: 'front',
       );
+      ref.read(thesisDebugReportProvider.notifier).recordSelfieStatus(
+            errorMessage: e.description ?? userMessage,
+          );
+      notifier.setCameraError(userMessage);
     } catch (_) {
       ref.read(thesisDebugReportProvider.notifier).recordSelfieStatus(
             errorMessage: 'Unable to start the front camera.',
@@ -172,7 +199,7 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
     WidgetsBinding.instance.removeObserver(this);
     _challengeTimeoutTimer?.cancel();
     unawaited(_stopImageStream());
-    _controller?.dispose();
+    unawaited(_disposeController());
     _faceDetector.close();
     super.dispose();
   }
@@ -205,7 +232,7 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
       return;
     }
     if (_controller == null || !(_controller?.value.isInitialized ?? false)) {
-      _initializeFuture = _initCamera();
+      _initializeFuture = _ensureCameraInitialized();
       if (mounted) setState(() {});
       return;
     }
@@ -296,6 +323,25 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
     } finally {
       _isProcessingFrame = false;
     }
+  }
+
+  String _cameraErrorMessage(
+    String code,
+    String? description, {
+    required String lensLabel,
+  }) {
+    if (code == 'CameraAccessDenied') {
+      return 'Camera access was denied by the device.';
+    }
+    final details = description?.toLowerCase() ?? '';
+    if (details.contains('no supported surface combination') ||
+        details.contains('may be attempting to bind too many use cases')) {
+      return 'Camera session conflicted during startup. Retry camera to try again.';
+    }
+    if (details.contains('no camera') || details.contains('not available')) {
+      return 'No $lensLabel camera is available on this device.';
+    }
+    return 'Unable to start the $lensLabel camera.';
   }
 
   Future<void> _handleChallenge(Face face) async {
