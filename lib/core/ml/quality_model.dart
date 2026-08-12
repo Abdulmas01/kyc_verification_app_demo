@@ -12,11 +12,13 @@ enum DocumentQuality { good, blurry, glare, dark, noDocument }
 
 class QualityResult {
   final DocumentQuality quality;
+  final DocumentQuality guidanceQuality;
   final double confidence;
   final List<double> probabilities;
 
   const QualityResult({
     required this.quality,
+    required this.guidanceQuality,
     required this.confidence,
     required this.probabilities,
   });
@@ -24,7 +26,7 @@ class QualityResult {
   bool get isGood => quality == DocumentQuality.good && confidence >= 0.7;
 
   String get message {
-    switch (quality) {
+    switch (guidanceQuality) {
       case DocumentQuality.good:
         return 'Hold steady for capture.';
       case DocumentQuality.blurry:
@@ -82,11 +84,58 @@ class QualityModel {
     final safeLabel = maxIdx < activeLabels.length
         ? activeLabels[maxIdx]
         : DocumentQualityContract.developmentFallback.classes[maxIdx];
+    final predictedQuality = _toQuality(safeLabel);
     return QualityResult(
-      quality: _toQuality(safeLabel),
+      quality: predictedQuality,
+      guidanceQuality: _resolveGuidanceQuality(
+        predictedQuality: predictedQuality,
+        probabilities: normalized,
+        labels: activeLabels,
+      ),
       confidence: normalized[maxIdx],
       probabilities: normalized,
     );
+  }
+
+// TODO : review this later for bug in logics
+  static DocumentQuality _resolveGuidanceQuality({
+    required DocumentQuality predictedQuality,
+    required List<double> probabilities,
+    required List<String> labels,
+  }) {
+    if (predictedQuality != DocumentQuality.noDocument) {
+      return predictedQuality;
+    }
+
+    final noDocumentIndex = labels.indexOf('NO_DOCUMENT');
+    if (noDocumentIndex == -1 || noDocumentIndex >= probabilities.length) {
+      return predictedQuality;
+    }
+
+    final noDocumentConfidence = probabilities[noDocumentIndex];
+    if (noDocumentConfidence >= 0.60) {
+      return predictedQuality;
+    }
+
+    var bestAlternativeIndex = -1;
+    var bestAlternativeConfidence = -1.0;
+
+    for (var i = 0; i < labels.length && i < probabilities.length; i++) {
+      if (i == noDocumentIndex) continue;
+      if (probabilities[i] > bestAlternativeConfidence) {
+        bestAlternativeConfidence = probabilities[i];
+        bestAlternativeIndex = i;
+      }
+    }
+
+    if (bestAlternativeIndex == -1 || bestAlternativeConfidence < 0.20) {
+      return predictedQuality;
+    }
+
+    final alternativeQuality = _toQuality(labels[bestAlternativeIndex]);
+    return alternativeQuality == DocumentQuality.good
+        ? predictedQuality
+        : alternativeQuality;
   }
 
   static DocumentQuality _toQuality(String label) {

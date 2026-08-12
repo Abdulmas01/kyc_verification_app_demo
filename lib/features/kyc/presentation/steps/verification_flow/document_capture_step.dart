@@ -263,7 +263,7 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
       if (!mounted) return;
       if (probs == null) return;
       final quality = QualityModel.fromProbabilities(probs);
-      final guidanceQuality = _resolveGuidanceQuality(quality.quality);
+      final guidanceQuality = _resolveGuidanceQuality(quality.guidanceQuality);
       final guidanceMessage = _messageForQuality(guidanceQuality);
 
       ref.read(documentCaptureUiProvider.notifier).updateQuality(
