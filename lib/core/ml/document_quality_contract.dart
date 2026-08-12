@@ -53,13 +53,7 @@ class DocumentQualityContract {
     try {
       final jsonString =
           await rootBundle.loadString(AppAssets.docQualityContract);
-      final decoded = jsonDecode(jsonString);
-      if (decoded is! Map<String, dynamic>) {
-        throw const ModelContractException(
-          'Document quality contract root must be a JSON object.',
-        );
-      }
-      return DocumentQualityContract.fromJson(decoded);
+      return DocumentQualityContract.fromJsonString(jsonString);
     } catch (error) {
       if (kDebugMode && allowDevelopmentFallback) {
         return developmentFallback;
@@ -69,6 +63,16 @@ class DocumentQualityContract {
         'Failed to load document quality contract: $error',
       );
     }
+  }
+
+  factory DocumentQualityContract.fromJsonString(String jsonString) {
+    final decoded = jsonDecode(jsonString);
+    if (decoded is! Map<String, dynamic>) {
+      throw const ModelContractException(
+        'Document quality contract root must be a JSON object.',
+      );
+    }
+    return DocumentQualityContract.fromJson(decoded);
   }
 
   factory DocumentQualityContract.fromJson(Map<String, dynamic> json) {

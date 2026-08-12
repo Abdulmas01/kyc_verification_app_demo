@@ -1,11 +1,13 @@
 import 'dart:async';
 import 'dart:isolate';
+
 import 'package:camera/camera.dart';
 import 'package:flutter/services.dart';
 import 'package:image/image.dart' as img;
 import 'package:tflite_flutter/tflite_flutter.dart';
 
 import '../utils/logger.dart';
+import '../utils/app_assets.dart';
 import 'document_quality_contract.dart';
 import 'model_contract_types.dart';
 
@@ -69,6 +71,8 @@ class QualityIsolate {
       );
     }
     final assetData = await rootBundle.load(assetPath);
+    final contractJson =
+        await rootBundle.loadString(AppAssets.docQualityContract);
     final modelData = TransferableTypedData.fromList([
       assetData.buffer.asUint8List(
         assetData.offsetInBytes,
@@ -82,6 +86,7 @@ class QualityIsolate {
         _receivePort.sendPort,
         rootToken,
         modelData,
+        contractJson,
       ),
     );
     _sendPort = await ready.future;
@@ -138,11 +143,13 @@ class _IsolateConfig {
     this.sendPort,
     this.rootToken,
     this.modelData,
+    this.contractJson,
   );
 
   final SendPort sendPort;
   final RootIsolateToken rootToken;
   final TransferableTypedData modelData;
+  final String contractJson;
 }
 
 class _FramePayload {
@@ -235,7 +242,7 @@ Future<void> _entry(_IsolateConfig config) async {
   final receivePort = ReceivePort();
   config.sendPort.send(receivePort.sendPort);
 
-  final contract = await DocumentQualityContract.load();
+  final contract = DocumentQualityContract.fromJsonString(config.contractJson);
   final modelBytes = config.modelData.materialize().asUint8List();
   final interpreter = Interpreter.fromBuffer(
     modelBytes,
