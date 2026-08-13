@@ -119,7 +119,6 @@ class QualityModel {
     );
   }
 
-// TODO : review this later for bug in logics
   static DocumentQuality _resolveGuidanceQuality({
     required DocumentQuality predictedQuality,
     required List<double> probabilities,

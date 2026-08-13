@@ -62,6 +62,10 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
   String? _lastGuidanceMessage;
   DocumentQuality? _lastLoggedRawQuality;
   DocumentQuality? _lastLoggedGuidanceQuality;
+  bool _lastGuidanceHoldLogged = false;
+
+  static const double _strongNegativeGuidanceThreshold = 0.50;
+  static const double _strongNegativeImmediateThreshold = 0.65;
 
   late int _frameStride;
   int _strideAdjustCounter = 0;
@@ -269,7 +273,7 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
       if (!mounted) return;
       if (probs == null) return;
       final quality = QualityModel.fromProbabilities(probs);
-      final guidanceQuality = _resolveGuidanceQuality(quality.guidanceQuality);
+      final guidanceQuality = _resolveGuidanceQuality(quality);
       final guidanceMessage = _messageForQuality(guidanceQuality);
       _logQualityTransition(
         quality: quality,
@@ -281,13 +285,13 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
       ref.read(documentCaptureUiProvider.notifier).updateQuality(
             message: guidanceMessage,
             confidence: quality.confidence,
-            isGood: quality.isGood,
+            isGood: _allowsQualityAcceptance(quality),
           );
       ref.read(thesisDebugReportProvider.notifier).recordDocumentQuality(
             statusMessage: guidanceMessage,
             qualityLabel: quality.quality.name,
             confidence: quality.confidence,
-            accepted: quality.isGood,
+            accepted: _allowsQualityAcceptance(quality),
             averageInferenceMs: _avgInferenceMs == 0
                 ? stopwatch.elapsedMicroseconds / 1000
                 : _avgInferenceMs,
@@ -295,7 +299,7 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
             frameStride: _frameStride,
           );
 
-      _handleAutoCapture(quality.isGood);
+      _handleAutoCapture(_allowsQualityAcceptance(quality));
       _recordInference(
         stopwatch.elapsedMicroseconds / 1000,
         quality: quality,
@@ -309,36 +313,98 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
     }
   }
 
-  DocumentQuality _resolveGuidanceQuality(DocumentQuality nextQuality) {
+  DocumentQuality _resolveGuidanceQuality(QualityResult quality) {
+    final nextQuality = quality.guidanceQuality;
     if (_activeGuidanceQuality == null) {
       _activeGuidanceQuality = nextQuality;
       _pendingGuidanceQuality = null;
       _pendingGuidanceCount = 0;
+      _lastGuidanceHoldLogged = false;
       return nextQuality;
     }
 
     if (nextQuality == _activeGuidanceQuality) {
       _pendingGuidanceQuality = null;
       _pendingGuidanceCount = 0;
+      _lastGuidanceHoldLogged = false;
       return _activeGuidanceQuality!;
+    }
+
+    if (_shouldImmediatelySwitchGuidance(quality, nextQuality)) {
+      _activeGuidanceQuality = nextQuality;
+      _pendingGuidanceQuality = null;
+      _pendingGuidanceCount = 0;
+      _lastGuidanceHoldLogged = false;
+      return nextQuality;
     }
 
     if (_pendingGuidanceQuality != nextQuality) {
       _pendingGuidanceQuality = nextQuality;
       _pendingGuidanceCount = 1;
+      _logGuidanceHold(
+        quality: quality,
+        activeQuality: _activeGuidanceQuality!,
+        pendingQuality: nextQuality,
+      );
       return _activeGuidanceQuality!;
     }
 
     _pendingGuidanceCount++;
     if (_pendingGuidanceCount <
         widget.effectiveCaptureConfig.guidanceStabilityFrames) {
+      _logGuidanceHold(
+        quality: quality,
+        activeQuality: _activeGuidanceQuality!,
+        pendingQuality: nextQuality,
+      );
       return _activeGuidanceQuality!;
     }
 
     _activeGuidanceQuality = nextQuality;
     _pendingGuidanceQuality = null;
     _pendingGuidanceCount = 0;
+    _lastGuidanceHoldLogged = false;
     return nextQuality;
+  }
+
+  bool _shouldImmediatelySwitchGuidance(
+    QualityResult quality,
+    DocumentQuality nextQuality,
+  ) {
+    if (_activeGuidanceQuality == DocumentQuality.good &&
+        nextQuality != DocumentQuality.good) {
+      return quality.confidence >= _strongNegativeGuidanceThreshold;
+    }
+
+    if (_activeGuidanceQuality != null &&
+        _activeGuidanceQuality != nextQuality &&
+        nextQuality != DocumentQuality.noDocument &&
+        quality.confidence >= _strongNegativeImmediateThreshold) {
+      return true;
+    }
+
+    return false;
+  }
+
+  void _logGuidanceHold({
+    required QualityResult quality,
+    required DocumentQuality activeQuality,
+    required DocumentQuality pendingQuality,
+  }) {
+    if (_lastGuidanceHoldLogged) return;
+    _lastGuidanceHoldLogged = true;
+    logPrint(
+      [
+        'DocQuality hold',
+        'session=${_formatDuration(_sessionStopwatch.elapsed)}',
+        'frame=$_frameCounter',
+        'raw=${quality.quality.name}:${(quality.confidence * 100).toStringAsFixed(1)}%',
+        'active=${activeQuality.name}',
+        'pending=${pendingQuality.name}',
+        'pending_count=$_pendingGuidanceCount/${widget.effectiveCaptureConfig.guidanceStabilityFrames}',
+        'top=${quality.topPredictionsSummary()}',
+      ].join(' | '),
+    );
   }
 
   String _messageForQuality(DocumentQuality quality) {
@@ -413,6 +479,7 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
     _lastLoggedRawQuality = quality.quality;
     _lastLoggedGuidanceQuality = guidanceQuality;
     _lastGuidanceMessage = guidanceMessage;
+    _lastGuidanceHoldLogged = false;
 
     final noDocumentConfidence =
         quality.probabilityForLabel('NO_DOCUMENT') * 100;
@@ -438,6 +505,12 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
   }
 
   void _handleAutoCapture(bool isGood) {
+    if (!_usesQualityGate) {
+      _autoCaptureTimer?.cancel();
+      ref.read(documentCaptureUiProvider.notifier).setAutoCapturing(false);
+      return;
+    }
+
     if (isGood) {
       if (_autoCaptureTimer?.isActive ?? false) return;
       ref.read(documentCaptureUiProvider.notifier).setAutoCapturing(true);
@@ -618,7 +691,8 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
                 enabled: uiState.isPermissionDenied ||
                         uiState.cameraErrorMessage != null
                     ? true
-                    : !uiState.isDetecting && uiState.isQualityGood,
+                    : !uiState.isDetecting &&
+                        (_usesQualityGate ? uiState.isQualityGood : true),
                 onTap: uiState.isPermissionDenied ||
                         uiState.cameraErrorMessage != null
                     ? _retryCameraSetup
@@ -669,6 +743,7 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
     _lastGuidanceMessage = null;
     _lastLoggedRawQuality = null;
     _lastLoggedGuidanceQuality = null;
+    _lastGuidanceHoldLogged = false;
     await _pauseCamera();
     await _disposeController();
     if (!mounted) return;
@@ -690,7 +765,19 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
       'auto_capture_hold_ms': config.autoCaptureHoldDuration.inMilliseconds,
       'performance_log_every': config.performanceLogEvery,
       'guidance_stability_frames': config.guidanceStabilityFrames,
+      'quality_mode': config.qualityMode.name,
     };
+  }
+
+  bool get _usesQualityGate =>
+      widget.effectiveCaptureConfig.qualityMode ==
+      DocumentQualityMode.qualityGate;
+
+  bool _allowsQualityAcceptance(QualityResult quality) {
+    if (!_usesQualityGate) {
+      return true;
+    }
+    return quality.isGood;
   }
 
   String _cameraErrorMessage(

@@ -1,5 +1,7 @@
 import 'package:camera/camera.dart';
 
+enum DocumentQualityMode { guidanceOnly, qualityGate }
+
 class DocumentCaptureConfig {
   final ResolutionPreset resolutionPreset;
   final ImageFormatGroup imageFormatGroup;
@@ -12,6 +14,7 @@ class DocumentCaptureConfig {
   final Duration autoCaptureHoldDuration;
   final int performanceLogEvery;
   final int guidanceStabilityFrames;
+  final DocumentQualityMode qualityMode;
 
   const DocumentCaptureConfig({
     required this.resolutionPreset,
@@ -25,6 +28,7 @@ class DocumentCaptureConfig {
     required this.autoCaptureHoldDuration,
     required this.performanceLogEvery,
     required this.guidanceStabilityFrames,
+    required this.qualityMode,
   });
 
   const DocumentCaptureConfig.balanced()
@@ -38,7 +42,8 @@ class DocumentCaptureConfig {
         decreaseStrideInferenceMs = 40,
         autoCaptureHoldDuration = const Duration(milliseconds: 1500),
         performanceLogEvery = 30,
-        guidanceStabilityFrames = 3;
+        guidanceStabilityFrames = 3,
+        qualityMode = DocumentQualityMode.guidanceOnly;
 
   const DocumentCaptureConfig.fast()
       : resolutionPreset = ResolutionPreset.low,
@@ -51,7 +56,8 @@ class DocumentCaptureConfig {
         decreaseStrideInferenceMs = 30,
         autoCaptureHoldDuration = const Duration(milliseconds: 1200),
         performanceLogEvery = 40,
-        guidanceStabilityFrames = 2;
+        guidanceStabilityFrames = 2,
+        qualityMode = DocumentQualityMode.guidanceOnly;
 
   const DocumentCaptureConfig.highQuality()
       : resolutionPreset = ResolutionPreset.high,
@@ -64,7 +70,8 @@ class DocumentCaptureConfig {
         decreaseStrideInferenceMs = 45,
         autoCaptureHoldDuration = const Duration(milliseconds: 1700),
         performanceLogEvery = 20,
-        guidanceStabilityFrames = 4;
+        guidanceStabilityFrames = 4,
+        qualityMode = DocumentQualityMode.guidanceOnly;
 }
 
 class SelfieLivenessConfig {
