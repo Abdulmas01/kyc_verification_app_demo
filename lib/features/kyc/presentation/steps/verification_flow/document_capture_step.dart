@@ -57,6 +57,11 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
   DocumentQuality? _pendingGuidanceQuality;
   int _pendingGuidanceCount = 0;
   DocumentQuality? _activeGuidanceQuality;
+  final Stopwatch _sessionStopwatch = Stopwatch();
+  Duration _lastGuidanceTransitionAt = Duration.zero;
+  String? _lastGuidanceMessage;
+  DocumentQuality? _lastLoggedRawQuality;
+  DocumentQuality? _lastLoggedGuidanceQuality;
 
   late int _frameStride;
   int _strideAdjustCounter = 0;
@@ -66,6 +71,7 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
   @override
   void initState() {
     super.initState();
+    _sessionStopwatch.start();
     _frameStride = widget.effectiveCaptureConfig.initialFrameStride;
     WidgetsBinding.instance.addObserver(this);
     _objectDetector = ObjectDetector(
@@ -265,6 +271,12 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
       final quality = QualityModel.fromProbabilities(probs);
       final guidanceQuality = _resolveGuidanceQuality(quality.guidanceQuality);
       final guidanceMessage = _messageForQuality(guidanceQuality);
+      _logQualityTransition(
+        quality: quality,
+        guidanceQuality: guidanceQuality,
+        guidanceMessage: guidanceMessage,
+        inferenceMs: stopwatch.elapsedMicroseconds / 1000,
+      );
 
       ref.read(documentCaptureUiProvider.notifier).updateQuality(
             message: guidanceMessage,
@@ -367,16 +379,62 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
     if (_inferenceSamples % widget.effectiveCaptureConfig.performanceLogEvery ==
         0) {
       logPrint(
-        'DocQuality avg inference: ${_avgInferenceMs.toStringAsFixed(1)}ms '
-        '(stride=$_frameStride)',
+        [
+          'DocQuality snapshot',
+          'session=${_formatDuration(_sessionStopwatch.elapsed)}',
+          'frame=$_frameCounter',
+          'avg=${_avgInferenceMs.toStringAsFixed(1)}ms',
+          'last=${ms.toStringAsFixed(1)}ms',
+          'stride=$_frameStride',
+          'guidance=${_lastGuidanceMessage ?? _messageForQuality(_activeGuidanceQuality ?? DocumentQuality.noDocument)}',
+          if (quality != null) 'top=${quality.topPredictionsSummary()}',
+        ].join(' | '),
       );
-      if (quality != null) {
-        logPrint(
-          'DocQuality last: ${quality.quality} '
-          'conf=${(quality.confidence * 100).toStringAsFixed(1)}%',
-        );
-      }
     }
+  }
+
+  void _logQualityTransition({
+    required QualityResult quality,
+    required DocumentQuality guidanceQuality,
+    required String guidanceMessage,
+    required double inferenceMs,
+  }) {
+    final rawChanged = quality.quality != _lastLoggedRawQuality;
+    final guidanceChanged = guidanceQuality != _lastLoggedGuidanceQuality ||
+        guidanceMessage != _lastGuidanceMessage;
+
+    if (!rawChanged && !guidanceChanged) {
+      return;
+    }
+
+    final now = _sessionStopwatch.elapsed;
+    final sinceLast = now - _lastGuidanceTransitionAt;
+    _lastGuidanceTransitionAt = now;
+    _lastLoggedRawQuality = quality.quality;
+    _lastLoggedGuidanceQuality = guidanceQuality;
+    _lastGuidanceMessage = guidanceMessage;
+
+    final noDocumentConfidence =
+        quality.probabilityForLabel('NO_DOCUMENT') * 100;
+    final blurryConfidence = quality.probabilityForLabel('BLURRY') * 100;
+    final darkConfidence = quality.probabilityForLabel('DARK') * 100;
+    final glareConfidence = quality.probabilityForLabel('GLARE') * 100;
+    final goodConfidence = quality.probabilityForLabel('GOOD') * 100;
+
+    logPrint(
+      [
+        'DocQuality transition',
+        'session=${_formatDuration(now)}',
+        'since_last=${_formatDuration(sinceLast)}',
+        'frame=$_frameCounter',
+        'infer=${inferenceMs.toStringAsFixed(1)}ms',
+        'raw=${quality.quality.name}:${(quality.confidence * 100).toStringAsFixed(1)}%',
+        'guidance=${guidanceQuality.name}',
+        'message="$guidanceMessage"',
+        'top=${quality.topPredictionsSummary()}',
+        'probs[good=${goodConfidence.toStringAsFixed(1)} blur=${blurryConfidence.toStringAsFixed(1)} glare=${glareConfidence.toStringAsFixed(1)} dark=${darkConfidence.toStringAsFixed(1)} nodoc=${noDocumentConfidence.toStringAsFixed(1)}]',
+      ].join(' | '),
+    );
   }
 
   void _handleAutoCapture(bool isGood) {
@@ -607,6 +665,10 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
     _pendingGuidanceQuality = null;
     _pendingGuidanceCount = 0;
     _activeGuidanceQuality = null;
+    _lastGuidanceTransitionAt = Duration.zero;
+    _lastGuidanceMessage = null;
+    _lastLoggedRawQuality = null;
+    _lastLoggedGuidanceQuality = null;
     await _pauseCamera();
     await _disposeController();
     if (!mounted) return;
@@ -648,6 +710,13 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
       return 'No $lensLabel camera is available on this device.';
     }
     return 'Unable to start the $lensLabel camera.';
+  }
+
+  String _formatDuration(Duration duration) {
+    final totalMs = duration.inMilliseconds;
+    final seconds = totalMs ~/ 1000;
+    final millis = totalMs % 1000;
+    return '$seconds.${(millis ~/ 10).toString().padLeft(2, '0')}s';
   }
 }
 

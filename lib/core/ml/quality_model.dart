@@ -15,12 +15,14 @@ class QualityResult {
   final DocumentQuality guidanceQuality;
   final double confidence;
   final List<double> probabilities;
+  final List<String> labels;
 
   const QualityResult({
     required this.quality,
     required this.guidanceQuality,
     required this.confidence,
     required this.probabilities,
+    required this.labels,
   });
 
   bool get isGood => quality == DocumentQuality.good && confidence >= 0.7;
@@ -38,6 +40,25 @@ class QualityResult {
       case DocumentQuality.noDocument:
         return 'Place your ID fully inside the frame.';
     }
+  }
+
+  double probabilityForLabel(String label) {
+    final index = labels.indexOf(label);
+    if (index == -1 || index >= probabilities.length) return 0;
+    return probabilities[index];
+  }
+
+  String topPredictionsSummary({int limit = 3}) {
+    final entries = <MapEntry<String, double>>[];
+    for (var i = 0; i < labels.length && i < probabilities.length; i++) {
+      entries.add(MapEntry(labels[i], probabilities[i]));
+    }
+    entries.sort((a, b) => b.value.compareTo(a.value));
+    return entries
+        .take(limit)
+        .map((entry) =>
+            '${entry.key}:${(entry.value * 100).toStringAsFixed(1)}%')
+        .join(', ');
   }
 }
 
@@ -94,6 +115,7 @@ class QualityModel {
       ),
       confidence: normalized[maxIdx],
       probabilities: normalized,
+      labels: activeLabels,
     );
   }
 
