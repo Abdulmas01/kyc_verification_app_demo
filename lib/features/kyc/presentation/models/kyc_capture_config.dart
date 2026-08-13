@@ -12,6 +12,7 @@ class DocumentCaptureConfig {
   final double increaseStrideInferenceMs;
   final double decreaseStrideInferenceMs;
   final Duration autoCaptureHoldDuration;
+  final bool autoCaptureEnabled;
   final int performanceLogEvery;
   final int guidanceStabilityFrames;
   final DocumentQualityMode qualityMode;
@@ -26,6 +27,7 @@ class DocumentCaptureConfig {
     required this.increaseStrideInferenceMs,
     required this.decreaseStrideInferenceMs,
     required this.autoCaptureHoldDuration,
+    required this.autoCaptureEnabled,
     required this.performanceLogEvery,
     required this.guidanceStabilityFrames,
     required this.qualityMode,
@@ -41,6 +43,7 @@ class DocumentCaptureConfig {
         increaseStrideInferenceMs = 80,
         decreaseStrideInferenceMs = 40,
         autoCaptureHoldDuration = const Duration(milliseconds: 1500),
+        autoCaptureEnabled = true,
         performanceLogEvery = 30,
         guidanceStabilityFrames = 3,
         qualityMode = DocumentQualityMode.guidanceOnly;
@@ -55,6 +58,7 @@ class DocumentCaptureConfig {
         increaseStrideInferenceMs = 65,
         decreaseStrideInferenceMs = 30,
         autoCaptureHoldDuration = const Duration(milliseconds: 1200),
+        autoCaptureEnabled = true,
         performanceLogEvery = 40,
         guidanceStabilityFrames = 2,
         qualityMode = DocumentQualityMode.guidanceOnly;
@@ -69,6 +73,7 @@ class DocumentCaptureConfig {
         increaseStrideInferenceMs = 95,
         decreaseStrideInferenceMs = 45,
         autoCaptureHoldDuration = const Duration(milliseconds: 1700),
+        autoCaptureEnabled = true,
         performanceLogEvery = 20,
         guidanceStabilityFrames = 4,
         qualityMode = DocumentQualityMode.guidanceOnly;

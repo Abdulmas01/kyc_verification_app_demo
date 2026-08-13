@@ -282,16 +282,17 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
         inferenceMs: stopwatch.elapsedMicroseconds / 1000,
       );
 
+      final allowsQualityAcceptance = _allowsQualityAcceptance(quality);
       ref.read(documentCaptureUiProvider.notifier).updateQuality(
             message: guidanceMessage,
             confidence: quality.confidence,
-            isGood: _allowsQualityAcceptance(quality),
+            isGood: allowsQualityAcceptance,
           );
       ref.read(thesisDebugReportProvider.notifier).recordDocumentQuality(
             statusMessage: guidanceMessage,
             qualityLabel: quality.quality.name,
             confidence: quality.confidence,
-            accepted: _allowsQualityAcceptance(quality),
+            accepted: allowsQualityAcceptance,
             averageInferenceMs: _avgInferenceMs == 0
                 ? stopwatch.elapsedMicroseconds / 1000
                 : _avgInferenceMs,
@@ -299,7 +300,10 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
             frameStride: _frameStride,
           );
 
-      _handleAutoCapture(_allowsQualityAcceptance(quality));
+      _handleAutoCapture(
+        quality: quality,
+        allowsQualityAcceptance: allowsQualityAcceptance,
+      );
       _recordInference(
         stopwatch.elapsedMicroseconds / 1000,
         quality: quality,
@@ -504,14 +508,21 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
     );
   }
 
-  void _handleAutoCapture(bool isGood) {
-    if (!_usesQualityGate) {
+  void _handleAutoCapture({
+    required QualityResult quality,
+    required bool allowsQualityAcceptance,
+  }) {
+    if (!widget.effectiveCaptureConfig.autoCaptureEnabled) {
       _autoCaptureTimer?.cancel();
       ref.read(documentCaptureUiProvider.notifier).setAutoCapturing(false);
       return;
     }
 
-    if (isGood) {
+    final autoCaptureReady = _usesQualityGate
+        ? allowsQualityAcceptance
+        : quality.guidanceQuality == DocumentQuality.good;
+
+    if (autoCaptureReady) {
       if (_autoCaptureTimer?.isActive ?? false) return;
       ref.read(documentCaptureUiProvider.notifier).setAutoCapturing(true);
       ref
@@ -763,6 +774,7 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
       'increase_stride_inference_ms': config.increaseStrideInferenceMs,
       'decrease_stride_inference_ms': config.decreaseStrideInferenceMs,
       'auto_capture_hold_ms': config.autoCaptureHoldDuration.inMilliseconds,
+      'auto_capture_enabled': config.autoCaptureEnabled,
       'performance_log_every': config.performanceLogEvery,
       'guidance_stability_frames': config.guidanceStabilityFrames,
       'quality_mode': config.qualityMode.name,
