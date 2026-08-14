@@ -262,6 +262,9 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
       if (mounted) setState(() {});
       return;
     }
+    if ((_controller?.value.isStreamingImages ?? false) && !_isStreaming) {
+      _isStreaming = true;
+    }
     if (!_isStreaming && !_capturingSelfie) {
       _scheduleChallengeTimeout();
       await _startImageStream();
@@ -269,8 +272,14 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
   }
 
   Future<void> _startImageStream() async {
-    if (_controller == null || _isStreaming) return;
-    await _controller!.startImageStream((cameraImage) {
+    final controller = _controller;
+    if (controller == null) return;
+    if (controller.value.isStreamingImages) {
+      _isStreaming = true;
+      return;
+    }
+    if (_isStreaming) return;
+    await controller.startImageStream((cameraImage) {
       if (!mounted || _capturingSelfie) return;
       _frameCounter++;
       if (_frameCounter % widget.effectiveLivenessConfig.frameStride != 0) {
@@ -285,8 +294,13 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
   }
 
   Future<void> _stopImageStream() async {
-    if (_controller == null || !_isStreaming) return;
-    await _controller!.stopImageStream();
+    final controller = _controller;
+    if (controller == null) return;
+    if (!(controller.value.isStreamingImages || _isStreaming)) {
+      _isStreaming = false;
+      return;
+    }
+    await controller.stopImageStream();
     _isStreaming = false;
   }
 
@@ -685,10 +699,9 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
             ],
             const SizedBox(height: AppSpacing.s16),
             Expanded(
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(16),
-                child: Container(
-                  color: Theme.of(context).colorScheme.surface,
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 420),
                   child: FutureBuilder<void>(
                     future: _initializeFuture,
                     builder: (context, snapshot) {
@@ -721,20 +734,9 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
                         );
                       }
 
-                      return Stack(
-                        fit: StackFit.expand,
-                        children: [
-                          CameraPreview(_controller!),
-                          const _FaceOvalOverlay(),
-                          Positioned(
-                            top: AppSpacing.s16,
-                            left: AppSpacing.s16,
-                            right: AppSpacing.s16,
-                            child: _DetectionBadge(
-                              isFaceDetected: uiState.isFaceDetected,
-                            ),
-                          ),
-                        ],
+                      return _SelfieCameraStage(
+                        controller: _controller!,
+                        isFaceDetected: uiState.isFaceDetected,
                       );
                     },
                   ),
@@ -979,6 +981,87 @@ class _ChallengeChip extends StatelessWidget {
   }
 }
 
+class _SelfieCameraStage extends StatelessWidget {
+  const _SelfieCameraStage({
+    required this.controller,
+    required this.isFaceDetected,
+  });
+
+  final CameraController controller;
+  final bool isFaceDetected;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(24),
+        color: colors.surface,
+        border: Border.all(color: colors.outlineVariant),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.08),
+            blurRadius: 24,
+            offset: const Offset(0, 12),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.all(AppSpacing.s10),
+      child: AspectRatio(
+        aspectRatio: 0.72,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(20),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              Container(color: Colors.black),
+              _SelfiePreview(controller: controller),
+              const _FaceOvalOverlay(),
+              Positioned(
+                top: AppSpacing.s16,
+                left: AppSpacing.s16,
+                right: AppSpacing.s16,
+                child: _DetectionBadge(
+                  isFaceDetected: isFaceDetected,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SelfiePreview extends StatelessWidget {
+  const _SelfiePreview({required this.controller});
+
+  final CameraController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final previewSize = controller.value.previewSize;
+        final previewAspectRatio = previewSize == null
+            ? (1 / controller.value.aspectRatio)
+            : (previewSize.height / previewSize.width);
+
+        return ClipRect(
+          child: FittedBox(
+            fit: BoxFit.cover,
+            child: SizedBox(
+              width: constraints.maxHeight * previewAspectRatio,
+              height: constraints.maxHeight,
+              child: CameraPreview(controller),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
 class _DetectionBadge extends StatelessWidget {
   const _DetectionBadge({required this.isFaceDetected});
 
@@ -1005,7 +1088,7 @@ class _DetectionBadge extends StatelessWidget {
           borderRadius: BorderRadius.circular(999),
         ),
         child: Text(
-          isFaceDetected ? 'Face detected' : 'Waiting for face',
+          isFaceDetected ? 'Face aligned' : 'Position your face in the oval',
           style: context.textTheme.bodySmall?.copyWith(color: foreground),
         ),
       ),
@@ -1019,24 +1102,30 @@ class _FaceOvalOverlay extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return IgnorePointer(
-      child: Center(
-        child: Container(
-          width: 220,
-          height: 300,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(999),
-            border: Border.all(
-              color: Colors.white.withValues(alpha: 0.9),
-              width: 3,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.18),
-                blurRadius: 20,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final ovalWidth = constraints.maxWidth * 0.62;
+          final ovalHeight = constraints.maxHeight * 0.58;
+          return Center(
+            child: Container(
+              width: ovalWidth.clamp(210.0, 290.0),
+              height: ovalHeight.clamp(280.0, 380.0),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(
+                  color: Colors.white.withValues(alpha: 0.92),
+                  width: 3,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.18),
+                    blurRadius: 20,
+                  ),
+                ],
               ),
-            ],
-          ),
-        ),
+            ),
+          );
+        },
       ),
     );
   }

@@ -273,14 +273,23 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
       return;
     }
     await _resumePreviewIfNeeded();
+    if ((_controller?.value.isStreamingImages ?? false) && !_isStreaming) {
+      _isStreaming = true;
+    }
     if (!_isStreaming) {
       await _startImageStream();
     }
   }
 
   Future<void> _startImageStream() async {
-    if (_controller == null || _isStreaming) return;
-    await _controller!.startImageStream((cameraImage) {
+    final controller = _controller;
+    if (controller == null) return;
+    if (controller.value.isStreamingImages) {
+      _isStreaming = true;
+      return;
+    }
+    if (_isStreaming) return;
+    await controller.startImageStream((cameraImage) {
       if (!mounted) return;
       _frameCounter++;
       if (_frameCounter % _frameStride != 0) return;
