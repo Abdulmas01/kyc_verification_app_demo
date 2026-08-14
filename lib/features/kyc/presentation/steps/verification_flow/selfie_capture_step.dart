@@ -24,6 +24,7 @@ import '../../../domain/models/mobile_liveness_shadow_request.dart';
 import '../../../domain/models/selfie_input_image_request.dart';
 import '../../../domain/models/selfie_liveness_challenge_request.dart';
 import '../../../domain/models/selfie_liveness_decision.dart';
+import '../../controllers/selfie_capture_runtime_controller.dart';
 import '../../controllers/selfie_capture_ui_notifier.dart';
 import '../../controllers/thesis_debug_report_notifier.dart';
 import '../../models/kyc_capture_config.dart';
@@ -60,12 +61,8 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
   late final SelfieInputImageService _selfieInputImageService;
   late final SelfieLivenessChallengeService _challengeService;
   late final MobileLivenessShadowService _mobileLivenessShadowService;
+  late final SelfieCaptureRuntimeController _runtimeController;
   bool _isStreaming = false;
-  bool _isProcessingFrame = false;
-  bool _blinkPrimed = false;
-  bool _capturingSelfie = false;
-  int _frameCounter = 0;
-  int _analysisFailureCount = 0;
   Timer? _challengeTimeoutTimer;
 
   late final FaceDetector _faceDetector;
@@ -81,6 +78,7 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
     _selfieInputImageService = const SelfieInputImageService();
     _challengeService = const SelfieLivenessChallengeService();
     _mobileLivenessShadowService = const MobileLivenessShadowService();
+    _runtimeController = SelfieCaptureRuntimeController();
     _faceDetector = FaceDetector(
       options: FaceDetectorOptions(
         enableContours: false,
@@ -123,6 +121,7 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
     final controller = _controller;
     _controller = null;
     _isStreaming = false;
+    _runtimeController.resetFlow();
     await _cameraLifecycle.disposeController(controller);
   }
 
@@ -232,7 +231,7 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
 
   Future<void> _pauseCameraInternal() async {
     _challengeTimeoutTimer?.cancel();
-    _isProcessingFrame = false;
+    _runtimeController.resetProcessing();
     await _cameraLifecycle.stopImageStreamImmediate(_controller);
   }
 
@@ -253,7 +252,7 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
     }
     _cameraLifecycle.syncStreamingFromController(_controller);
     _isStreaming = _cameraLifecycle.isStreaming;
-    if (!_isStreaming && !_capturingSelfie) {
+    if (!_isStreaming && !_runtimeController.isCapturingSelfie) {
       _scheduleChallengeTimeout();
       await _startImageStreamInternal();
     }
@@ -286,7 +285,7 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
 
   Future<void> _processCameraFrame(CameraImage cameraImage) async {
     if (!_cameraLifecycle.isRouteActive || _cameraLifecycle.isDisposed) {
-      _isProcessingFrame = false;
+      _runtimeController.resetProcessing();
       return;
     }
     final selfieCaptureUiNotifier = ref.read(selfieCaptureUiProvider.notifier);
@@ -300,8 +299,8 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
         ),
       );
       if (inputImage == null) {
-        _analysisFailureCount++;
-        if (_analysisFailureCount <= 3 || _analysisFailureCount % 10 == 0) {
+        final failureCount = _runtimeController.registerAnalysisFailure();
+        if (failureCount <= 3 || failureCount % 10 == 0) {
           logPrint(
             'Selfie frame skipped: unsupported camera image format '
             '(format=${cameraImage.format.raw}, planes=${cameraImage.planes.length}).',
@@ -311,11 +310,11 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
       }
 
       final faces = await _faceDetector.processImage(inputImage);
-      _analysisFailureCount = 0;
+      _runtimeController.resetAnalysisFailures();
       if (!mounted) return;
 
       if (faces.isEmpty) {
-        _blinkPrimed = false;
+        _runtimeController.setBlinkPrimed(false);
         selfieCaptureUiNotifier.setFaceDetected(false);
         ref.read(thesisDebugReportProvider.notifier).recordSelfieFaceDetected(
               false,
@@ -352,11 +351,11 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
           );
       await _applyChallengeDecision(face);
     } catch (error) {
-      _analysisFailureCount++;
-      if (_analysisFailureCount <= 3 || _analysisFailureCount % 10 == 0) {
+      final failureCount = _runtimeController.registerAnalysisFailure();
+      if (failureCount <= 3 || failureCount % 10 == 0) {
         logPrint(
           'Selfie face analysis failed '
-          '(count=$_analysisFailureCount, error=$error).',
+          '(count=$failureCount, error=$error).',
         );
       }
       if (!mounted) return;
@@ -369,7 +368,7 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
             errorMessage: 'Face analysis failed. Please try again.',
           );
     } finally {
-      _isProcessingFrame = false;
+      _runtimeController.resetProcessing();
     }
   }
 
@@ -400,15 +399,15 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
         face: face,
         uiState: uiState,
         config: widget.effectiveLivenessConfig,
-        blinkPrimed: _blinkPrimed,
+        blinkPrimed: _runtimeController.isBlinkPrimed,
       ),
     );
 
     if (decision.primesBlink) {
-      _blinkPrimed = true;
+      _runtimeController.setBlinkPrimed(true);
     }
     if (decision.resetsBlink) {
-      _blinkPrimed = false;
+      _runtimeController.setBlinkPrimed(false);
     }
 
     switch (decision.type) {
@@ -457,8 +456,8 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
 
   Future<void> _captureSelfie() async {
     final selfieCaptureUiNotifier = ref.read(selfieCaptureUiProvider.notifier);
-    if (_controller == null || _capturingSelfie) return;
-    _capturingSelfie = true;
+    if (_controller == null || _runtimeController.isCapturingSelfie) return;
+    _runtimeController.setCapturingSelfie(true);
     try {
       await _stopImageStreamInternal();
       selfieCaptureUiNotifier.startCapture();
@@ -520,7 +519,7 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
       ToastUtil.showErrorToast('Selfie capture failed. Try again.');
       await _startImageStreamInternal();
     } finally {
-      _capturingSelfie = false;
+      _runtimeController.setCapturingSelfie(false);
       if (mounted && ref.read(selfieCaptureUiProvider).shouldRedo) {
         await _stopImageStreamInternal();
       }
@@ -559,7 +558,7 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
     _challengeTimeoutTimer = Timer(
       widget.effectiveLivenessConfig.challengeTimeout,
       () {
-        if (!mounted || _capturingSelfie) return;
+        if (!mounted || _runtimeController.isCapturingSelfie) return;
         final uiState = ref.read(selfieCaptureUiProvider);
         if (uiState.isChallengeComplete || uiState.shouldRedo) return;
         ref.read(selfieCaptureUiProvider.notifier).requestRedo(
@@ -683,7 +682,7 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
                           ref
                               .read(selfieCaptureUiProvider.notifier)
                               .resetFlow();
-                          _blinkPrimed = false;
+                          _runtimeController.resetFlow();
                           _scheduleChallengeTimeout();
                           _cameraLifecycle.markRouteActive(true);
                           unawaited(_startImageStream());
@@ -700,8 +699,7 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
 
   Future<void> _retryCameraSetup() async {
     _cameraLifecycle.markRouteActive(true);
-    _blinkPrimed = false;
-    _capturingSelfie = false;
+    _runtimeController.resetFlow();
     _challengeTimeoutTimer?.cancel();
     await _disposeController();
     if (!mounted) return;
@@ -729,14 +727,11 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
   }
 
   void _onCameraImage(CameraImage cameraImage) {
-    if (!mounted || _capturingSelfie) return;
-    _frameCounter++;
-    if (_frameCounter % widget.effectiveLivenessConfig.frameStride != 0) {
+    if (!mounted) return;
+    if (!_runtimeController
+        .shouldProcessNextFrame(widget.effectiveLivenessConfig.frameStride)) {
       return;
     }
-    if (_isProcessingFrame) return;
-
-    _isProcessingFrame = true;
     unawaited(_processCameraFrame(cameraImage));
   }
 }

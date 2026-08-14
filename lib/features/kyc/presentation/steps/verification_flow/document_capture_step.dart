@@ -24,6 +24,7 @@ import '../../../domain/models/document_capture_request.dart';
 import '../../../domain/models/document_capture_result.dart';
 import '../../../domain/models/document_quality_guidance_request.dart';
 import '../../../domain/models/kyc_capture_bundle.dart';
+import '../../controllers/document_capture_runtime_controller.dart';
 import '../../controllers/document_capture_ui_notifier.dart';
 import '../../controllers/thesis_debug_report_notifier.dart';
 import '../../models/kyc_capture_config.dart';
@@ -59,25 +60,13 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
   late final ObjectDetector _objectDetector;
   late final DocumentCaptureService _documentCaptureService;
   late final DocumentQualityGuidanceService _guidanceService;
+  late final DocumentCaptureRuntimeController _runtimeController;
   Timer? _autoCaptureTimer;
-  bool _isProcessingFrame = false;
-  int _frameCounter = 0;
   QualityIsolate? _qualityIsolate;
-  final Stopwatch _sessionStopwatch = Stopwatch();
-  Duration _lastGuidanceTransitionAt = Duration.zero;
-  bool _pendingDebugSampleExport = false;
-  bool _isNavigatingToSelfie = false;
-
-  late int _frameStride;
-  int _strideAdjustCounter = 0;
-  double _avgInferenceMs = 0;
-  int _inferenceSamples = 0;
 
   @override
   void initState() {
     super.initState();
-    _sessionStopwatch.start();
-    _frameStride = widget.effectiveCaptureConfig.initialFrameStride;
     WidgetsBinding.instance.addObserver(this);
     _cameraLifecycle = CameraLifecycleCoordinator(
       logPrefix: 'Document camera',
@@ -85,6 +74,9 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
     );
     _documentCaptureService = const DocumentCaptureService();
     _guidanceService = DocumentQualityGuidanceService();
+    _runtimeController = DocumentCaptureRuntimeController(
+      initialFrameStride: widget.effectiveCaptureConfig.initialFrameStride,
+    )..startSession();
     _objectDetector = ObjectDetector(
       options: ObjectDetectorOptions(
         mode: DetectionMode.single,
@@ -231,8 +223,9 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
 
   Future<void> _pauseCameraInternal() async {
     _autoCaptureTimer?.cancel();
-    _frameStride = widget.effectiveCaptureConfig.initialFrameStride;
-    _isProcessingFrame = false;
+    _runtimeController.resetTransientState(
+      initialFrameStride: widget.effectiveCaptureConfig.initialFrameStride,
+    );
     await _cameraLifecycle.stopImageStreamImmediate(_controller);
   }
 
@@ -282,7 +275,7 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
       if (!_shouldProcessLiveQualityFrames) return;
       final inference = await _qualityIsolate?.predictPayload(
         payload,
-        includeDebugArtifacts: _pendingDebugSampleExport,
+        includeDebugArtifacts: _runtimeController.pendingDebugSampleExport,
       );
       if (!mounted) return;
       if (!_shouldProcessLiveQualityFrames) return;
@@ -320,11 +313,11 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
             qualityLabel: quality.quality.name,
             confidence: quality.confidence,
             accepted: guidance.allowsQualityAcceptance,
-            averageInferenceMs: _avgInferenceMs == 0
+            averageInferenceMs: _runtimeController.avgInferenceMs == 0
                 ? stopwatch.elapsedMicroseconds / 1000
-                : _avgInferenceMs,
-            inferenceSamples: _inferenceSamples,
-            frameStride: _frameStride,
+                : _runtimeController.avgInferenceMs,
+            inferenceSamples: _runtimeController.inferenceSamples,
+            frameStride: _runtimeController.frameStride,
           );
 
       _handleAutoCapture(
@@ -346,7 +339,7 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
     } catch (e) {
       if (!mounted) return;
     } finally {
-      _isProcessingFrame = false;
+      _runtimeController.finishFrameProcessing();
     }
   }
 
@@ -357,8 +350,8 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
     required String guidanceMessage,
     required double inferenceMs,
   }) async {
-    if (!_pendingDebugSampleExport) return;
-    _pendingDebugSampleExport = false;
+    if (!_runtimeController.pendingDebugSampleExport) return;
+    _runtimeController.setPendingDebugSampleExport(false);
     final debugArtifacts = inference.debugArtifacts;
     if (debugArtifacts == null) return;
 
@@ -371,8 +364,8 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
           displayedGuidance: guidanceQuality,
           guidanceMessage: guidanceMessage,
           inferenceMs: inferenceMs,
-          frameNumber: _frameCounter,
-          frameStride: _frameStride,
+          frameNumber: _runtimeController.frameCounter,
+          frameStride: _runtimeController.frameStride,
           documentConfig: _documentConfigToJson(widget.effectiveCaptureConfig),
           debugArtifacts: debugArtifacts,
         );
@@ -395,8 +388,8 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
     logPrint(
       [
         'DocQuality hold',
-        'session=${_formatDuration(_sessionStopwatch.elapsed)}',
-        'frame=$_frameCounter',
+        'session=${_runtimeController.formatDuration(_runtimeController.sessionElapsed)}',
+        'frame=${_runtimeController.frameCounter}',
         'raw=${quality.quality.name}:${(quality.confidence * 100).toStringAsFixed(1)}%',
         'active=${activeQuality.name}',
         'pending=${pendingQuality.name}',
@@ -407,35 +400,22 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
   }
 
   void _recordInference(double ms, {QualityResult? quality}) {
-    _inferenceSamples++;
-    _avgInferenceMs =
-        ((_avgInferenceMs * (_inferenceSamples - 1)) + ms) / _inferenceSamples;
+    _runtimeController.recordInference(
+      ms: ms,
+      config: widget.effectiveCaptureConfig,
+    );
 
-    _strideAdjustCounter++;
-    if (_strideAdjustCounter >=
-        widget.effectiveCaptureConfig.strideAdjustmentWindow) {
-      if (_avgInferenceMs >
-              widget.effectiveCaptureConfig.increaseStrideInferenceMs &&
-          _frameStride < widget.effectiveCaptureConfig.maxFrameStride) {
-        _frameStride++;
-      } else if (_avgInferenceMs <
-              widget.effectiveCaptureConfig.decreaseStrideInferenceMs &&
-          _frameStride > widget.effectiveCaptureConfig.minFrameStride) {
-        _frameStride--;
-      }
-      _strideAdjustCounter = 0;
-    }
-
-    if (_inferenceSamples % widget.effectiveCaptureConfig.performanceLogEvery ==
+    if (_runtimeController.inferenceSamples %
+            widget.effectiveCaptureConfig.performanceLogEvery ==
         0) {
       logPrint(
         [
           'DocQuality snapshot',
-          'session=${_formatDuration(_sessionStopwatch.elapsed)}',
-          'frame=$_frameCounter',
-          'avg=${_avgInferenceMs.toStringAsFixed(1)}ms',
+          'session=${_runtimeController.formatDuration(_runtimeController.sessionElapsed)}',
+          'frame=${_runtimeController.frameCounter}',
+          'avg=${_runtimeController.avgInferenceMs.toStringAsFixed(1)}ms',
           'last=${ms.toStringAsFixed(1)}ms',
-          'stride=$_frameStride',
+          'stride=${_runtimeController.frameStride}',
           'guidance=${_guidanceService.lastGuidanceMessage ?? 'Place your ID fully inside the frame.'}',
           if (quality != null) 'top=${quality.topPredictionsSummary()}',
         ].join(' | '),
@@ -458,9 +438,9 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
       return;
     }
 
-    final now = _sessionStopwatch.elapsed;
-    final sinceLast = now - _lastGuidanceTransitionAt;
-    _lastGuidanceTransitionAt = now;
+    final now = _runtimeController.sessionElapsed;
+    final sinceLast = now - _runtimeController.lastGuidanceTransitionAt;
+    _runtimeController.markTransitionLogged(now);
     _guidanceService.markTransitionLogged(
       quality: quality,
       guidanceQuality: guidanceQuality,
@@ -477,9 +457,9 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
     logPrint(
       [
         'DocQuality transition',
-        'session=${_formatDuration(now)}',
-        'since_last=${_formatDuration(sinceLast)}',
-        'frame=$_frameCounter',
+        'session=${_runtimeController.formatDuration(now)}',
+        'since_last=${_runtimeController.formatDuration(sinceLast)}',
+        'frame=${_runtimeController.frameCounter}',
         'infer=${inferenceMs.toStringAsFixed(1)}ms',
         'raw=${quality.quality.name}:${(quality.confidence * 100).toStringAsFixed(1)}%',
         'guidance=${guidanceQuality.name}',
@@ -552,7 +532,7 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
       );
       HapticFeedback.mediumImpact();
 
-      _isNavigatingToSelfie = true;
+      _runtimeController.setNavigatingToSelfie(true);
       _cameraLifecycle.markRouteActive(false);
       await Navigator.of(context).push(
         MaterialPageRoute(
@@ -563,12 +543,12 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
         ),
       );
       if (!mounted) return;
-      _isNavigatingToSelfie = false;
+      _runtimeController.setNavigatingToSelfie(false);
       _cameraLifecycle.markRouteActive(true);
       await _resumeCameraAfterReturn();
     } catch (e) {
       if (!mounted) return;
-      _isNavigatingToSelfie = false;
+      _runtimeController.setNavigatingToSelfie(false);
       _cameraLifecycle.markRouteActive(true);
       notifier.setError('Capture failed. Please try again.');
       ref
@@ -580,7 +560,7 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
         notifier.setDetecting(false);
         if (_controller != null &&
             !_cameraLifecycle.isStreaming &&
-            !_isNavigatingToSelfie &&
+            !_runtimeController.isNavigatingToSelfie &&
             !_controller!.value.isTakingPicture) {
           await _startImageStream();
         }
@@ -710,7 +690,7 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
                   child: OutlinedButton(
                     onPressed: () {
                       setState(() {
-                        _pendingDebugSampleExport = true;
+                        _runtimeController.setPendingDebugSampleExport(true);
                       });
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
@@ -762,9 +742,10 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
   Future<void> _retryCameraSetup() async {
     _cameraLifecycle.markRouteActive(true);
     _autoCaptureTimer?.cancel();
-    _isProcessingFrame = false;
+    _runtimeController.resetTransientState(
+      initialFrameStride: widget.effectiveCaptureConfig.initialFrameStride,
+    );
     _guidanceService.reset();
-    _lastGuidanceTransitionAt = Duration.zero;
     await _pauseCamera();
     await _disposeController();
     if (!mounted) return;
@@ -775,10 +756,11 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
 
   Future<void> _resumeCameraAfterReturn() async {
     _autoCaptureTimer?.cancel();
-    _isProcessingFrame = false;
+    _runtimeController.resetTransientState(
+      initialFrameStride: widget.effectiveCaptureConfig.initialFrameStride,
+    );
     _cameraLifecycle.syncStreamingFromController(null);
     _guidanceService.reset();
-    _lastGuidanceTransitionAt = Duration.zero;
     ref.read(documentCaptureUiProvider.notifier)
       ..setStatus('Document detected. Looks good!')
       ..setDocumentDetected(true)
@@ -791,9 +773,10 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
   Future<void> _startRecaptureFlow() async {
     _cameraLifecycle.markRouteActive(true);
     _autoCaptureTimer?.cancel();
-    _isProcessingFrame = false;
+    _runtimeController.resetTransientState(
+      initialFrameStride: widget.effectiveCaptureConfig.initialFrameStride,
+    );
     _guidanceService.reset();
-    _lastGuidanceTransitionAt = Duration.zero;
     ref.read(documentCaptureUiProvider.notifier)
       ..setStatus('Align your ID inside the frame.')
       ..setDocumentDetected(false)
@@ -844,18 +827,11 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
     return 'Unable to start the $lensLabel camera.';
   }
 
-  String _formatDuration(Duration duration) {
-    final totalMs = duration.inMilliseconds;
-    final seconds = totalMs ~/ 1000;
-    final millis = totalMs % 1000;
-    return '$seconds.${(millis ~/ 10).toString().padLeft(2, '0')}s';
-  }
-
   bool get _shouldProcessLiveQualityFrames {
     if (!mounted) return false;
     if (_cameraLifecycle.isDisposed) return false;
     if (!_cameraLifecycle.isRouteActive) return false;
-    if (_isNavigatingToSelfie) return false;
+    if (_runtimeController.isNavigatingToSelfie) return false;
     if (!_cameraLifecycle.isStreaming) return false;
     final controller = _controller;
     if (controller == null || !controller.value.isInitialized) return false;
@@ -880,14 +856,10 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
 
   void _onCameraImage(CameraImage cameraImage) {
     if (!mounted) return;
-    _frameCounter++;
-    if (_frameCounter % _frameStride != 0) return;
-    if (_isProcessingFrame) return;
-
-    _isProcessingFrame = true;
+    if (!_runtimeController.shouldProcessNextFrame()) return;
     final payload = _qualityIsolate?.buildPayload(cameraImage);
     if (payload == null) {
-      _isProcessingFrame = false;
+      _runtimeController.finishFrameProcessing();
       return;
     }
     unawaited(_processPayload(payload));
