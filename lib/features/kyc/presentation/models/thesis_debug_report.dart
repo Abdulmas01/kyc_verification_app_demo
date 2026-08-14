@@ -29,6 +29,7 @@ class ThesisDebugReport {
     this.mobileLivenessShadowAttempted = false,
     this.mobileLivenessShadowAvailable = false,
     this.mobileLivenessShadowScore,
+    this.mobileLivenessShadowThreshold,
     this.mobileLivenessShadowLatencyMs,
     this.mobileLivenessShadowError,
     this.processingStartedAt,
@@ -70,6 +71,7 @@ class ThesisDebugReport {
   final bool mobileLivenessShadowAttempted;
   final bool mobileLivenessShadowAvailable;
   final double? mobileLivenessShadowScore;
+  final double? mobileLivenessShadowThreshold;
   final double? mobileLivenessShadowLatencyMs;
   final String? mobileLivenessShadowError;
   final DateTime? processingStartedAt;
@@ -131,6 +133,8 @@ class ThesisDebugReport {
     bool? mobileLivenessShadowAvailable,
     double? mobileLivenessShadowScore,
     bool clearMobileLivenessShadowScore = false,
+    double? mobileLivenessShadowThreshold,
+    bool clearMobileLivenessShadowThreshold = false,
     double? mobileLivenessShadowLatencyMs,
     bool clearMobileLivenessShadowLatencyMs = false,
     String? mobileLivenessShadowError,
@@ -207,6 +211,10 @@ class ThesisDebugReport {
       mobileLivenessShadowScore: clearMobileLivenessShadowScore
           ? null
           : (mobileLivenessShadowScore ?? this.mobileLivenessShadowScore),
+      mobileLivenessShadowThreshold: clearMobileLivenessShadowThreshold
+          ? null
+          : (mobileLivenessShadowThreshold ??
+              this.mobileLivenessShadowThreshold),
       mobileLivenessShadowLatencyMs: clearMobileLivenessShadowLatencyMs
           ? null
           : (mobileLivenessShadowLatencyMs ??
@@ -277,6 +285,7 @@ class ThesisDebugReport {
             'attempted': mobileLivenessShadowAttempted,
             'available': mobileLivenessShadowAvailable,
             'score': mobileLivenessShadowScore,
+            'threshold': mobileLivenessShadowThreshold,
             'latency_ms': mobileLivenessShadowLatencyMs,
             'error': mobileLivenessShadowError,
           },

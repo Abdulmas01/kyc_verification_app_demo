@@ -146,6 +146,8 @@ class ThesisReportExporter {
       '- Mobile Shadow Attempted: ${report.mobileLivenessShadowAttempted}',
       '- Mobile Shadow Available: ${report.mobileLivenessShadowAvailable}',
       '- Mobile Shadow Score: ${_formatDouble(report.mobileLivenessShadowScore)}',
+      '- Mobile Shadow Threshold: ${_formatDouble(report.mobileLivenessShadowThreshold)}',
+      '- Mobile Shadow Interpretation: ${_formatMobileShadowInterpretation(report)}',
       '- Mobile Shadow Latency: ${_formatDouble(report.mobileLivenessShadowLatencyMs, suffix: ' ms')}',
       '- Mobile Shadow Error: ${report.mobileLivenessShadowError ?? 'None'}',
       '- Last Error: ${report.selfieError ?? 'None'}',
@@ -195,6 +197,18 @@ class ThesisReportExporter {
   String _formatNullableInt(int? value, {String suffix = ''}) {
     if (value == null) return 'N/A';
     return '$value$suffix';
+  }
+
+  String _formatMobileShadowInterpretation(ThesisDebugReport report) {
+    final score = report.mobileLivenessShadowScore;
+    final threshold = report.mobileLivenessShadowThreshold;
+    if (score == null || threshold == null || threshold <= 0) return 'N/A';
+
+    final ratio = score / threshold;
+    if (ratio >= 1) return 'meets threshold';
+    if (ratio >= 0.85) return 'borderline below threshold';
+    if (ratio >= 0.5) return 'clearly below threshold';
+    return 'very far below threshold';
   }
 }
 

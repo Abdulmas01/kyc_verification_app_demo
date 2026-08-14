@@ -783,7 +783,9 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
       ..setAutoCapturing(false)
       ..setDetecting(false)
       ..clearError();
-    await _resumeCamera();
+    await _stopImageStreamInternal();
+    await _resumePreviewIfNeeded();
+    await _startImageStreamInternal();
   }
 
   Map<String, dynamic> _documentConfigToJson(DocumentCaptureConfig config) {

@@ -26,6 +26,7 @@ class ThesisDebugReportNotifier extends Notifier<ThesisDebugReport> {
       mobileLivenessShadowAttempted: false,
       mobileLivenessShadowAvailable: false,
       clearMobileLivenessShadowScore: true,
+      clearMobileLivenessShadowThreshold: true,
       clearMobileLivenessShadowLatencyMs: true,
       clearMobileLivenessShadowError: true,
     );
@@ -109,12 +110,14 @@ class ThesisDebugReportNotifier extends Notifier<ThesisDebugReport> {
 
   void recordMobileLivenessShadowSuccess({
     required double score,
+    required double threshold,
     required double latencyMs,
   }) {
     state = state.copyWith(
       mobileLivenessShadowAttempted: true,
       mobileLivenessShadowAvailable: true,
       mobileLivenessShadowScore: score,
+      mobileLivenessShadowThreshold: threshold,
       mobileLivenessShadowLatencyMs: latencyMs,
       clearMobileLivenessShadowError: true,
     );
@@ -126,6 +129,7 @@ class ThesisDebugReportNotifier extends Notifier<ThesisDebugReport> {
       mobileLivenessShadowAvailable: false,
       mobileLivenessShadowError: message,
       clearMobileLivenessShadowScore: true,
+      clearMobileLivenessShadowThreshold: true,
       clearMobileLivenessShadowLatencyMs: true,
     );
   }

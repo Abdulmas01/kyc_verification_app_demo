@@ -8,6 +8,7 @@ import 'package:kyc_verification_app_demo/core/theme/app_spacing.dart';
 import 'package:kyc_verification_app_demo/core/widget/button_widget.dart';
 import 'package:kyc_verification_app_demo/features/kyc/data/services/thesis_report_exporter.dart';
 import 'package:kyc_verification_app_demo/features/kyc/presentation/controllers/thesis_debug_report_notifier.dart';
+import 'package:kyc_verification_app_demo/features/kyc/presentation/models/thesis_debug_report.dart';
 
 import '../../domain/models/verification_result.dart';
 import '../extensions/verification_decision_ui_ext.dart';
@@ -30,6 +31,7 @@ class _ResultScreenState extends ConsumerState<ResultScreen> {
   Widget build(BuildContext context) {
     final decisionUi = widget.result.decision;
     final latestExport = ref.watch(latestThesisReportExportProvider);
+    final debugReport = ref.watch(thesisDebugReportProvider);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Result')),
@@ -82,6 +84,8 @@ class _ResultScreenState extends ConsumerState<ResultScreen> {
                     if (kDebugMode) ...[
                       const SizedBox(height: AppSpacing.s24),
                       _DebugSignalsCard(result: widget.result),
+                      const SizedBox(height: AppSpacing.s16),
+                      _MobileShadowCard(report: debugReport),
                       const SizedBox(height: AppSpacing.s16),
                       _DebugExportCard(
                         latestExport: latestExport,
@@ -400,6 +404,94 @@ class _DebugExportCard extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+class _MobileShadowCard extends StatelessWidget {
+  const _MobileShadowCard({required this.report});
+
+  final ThesisDebugReport report;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: AppSpacing.pad16,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        color: Theme.of(context).colorScheme.surface,
+        border: Border.all(color: Theme.of(context).dividerColor),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Mobile Liveness Shadow', style: context.textTheme.titleMedium),
+          const SizedBox(height: AppSpacing.s12),
+          Wrap(
+            spacing: AppSpacing.s8,
+            runSpacing: AppSpacing.s8,
+            children: [
+              _SignalChip(
+                label: 'Enabled',
+                value: report.mobileLivenessShadowEnabled ? 'Yes' : 'No',
+              ),
+              _SignalChip(
+                label: 'Attempted',
+                value: report.mobileLivenessShadowAttempted ? 'Yes' : 'No',
+              ),
+              _SignalChip(
+                label: 'Available',
+                value: report.mobileLivenessShadowAvailable ? 'Yes' : 'No',
+              ),
+              _SignalChip(
+                label: 'Score',
+                value: _formatDouble(report.mobileLivenessShadowScore),
+              ),
+              _SignalChip(
+                label: 'Threshold',
+                value: _formatDouble(report.mobileLivenessShadowThreshold),
+              ),
+              _SignalChip(
+                label: 'Interpretation',
+                value: _interpretScore(report),
+              ),
+              _SignalChip(
+                label: 'Latency',
+                value: report.mobileLivenessShadowLatencyMs == null
+                    ? 'N/A'
+                    : '${report.mobileLivenessShadowLatencyMs!.toStringAsFixed(1)} ms',
+              ),
+            ],
+          ),
+          if (report.mobileLivenessShadowError != null) ...[
+            const SizedBox(height: AppSpacing.s12),
+            Text(
+              'Last error: ${report.mobileLivenessShadowError}',
+              style: context.textTheme.bodySmall,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  String _formatDouble(double? value) {
+    if (value == null) return 'N/A';
+    return value.toStringAsFixed(3);
+  }
+
+  String _interpretScore(ThesisDebugReport report) {
+    final score = report.mobileLivenessShadowScore;
+    final threshold = report.mobileLivenessShadowThreshold;
+    if (score == null || threshold == null || threshold <= 0) {
+      return 'N/A';
+    }
+
+    final ratio = score / threshold;
+    if (ratio >= 1) return 'Meets threshold';
+    if (ratio >= 0.85) return 'Borderline';
+    if (ratio >= 0.5) return 'Below target';
+    return 'Very low';
   }
 }
 

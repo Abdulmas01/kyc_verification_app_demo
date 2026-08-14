@@ -278,11 +278,6 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
     _isStreaming = _cameraLifecycle.isStreaming;
   }
 
-  Future<void> _stopImageStream() async {
-    await _cameraLifecycle.stopImageStream(_controller);
-    _isStreaming = _cameraLifecycle.isStreaming;
-  }
-
   Future<void> _stopImageStreamInternal() async {
     await _cameraLifecycle.stopImageStreamImmediate(_controller);
     _isStreaming = _cameraLifecycle.isStreaming;
@@ -536,9 +531,6 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
       await _startImageStreamInternal();
     } finally {
       _runtimeController.setCapturingSelfie(false);
-      if (mounted && ref.read(selfieCaptureUiProvider).shouldRedo) {
-        await _stopImageStreamInternal();
-      }
     }
   }
 
@@ -564,6 +556,7 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
           .read(thesisDebugReportProvider.notifier)
           .recordMobileLivenessShadowSuccess(
             score: result.score!,
+            threshold: result.threshold ?? 0,
             latencyMs: result.latencyMs!,
           );
       return;
@@ -602,7 +595,6 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
               incrementRedo: true,
               incrementTimeout: true,
             );
-        unawaited(_stopImageStream());
       },
     );
   }
