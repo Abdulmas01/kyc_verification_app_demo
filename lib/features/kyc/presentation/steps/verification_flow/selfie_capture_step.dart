@@ -20,6 +20,9 @@ import '../../../data/services/mobile_liveness_shadow_service.dart';
 import '../../../data/services/selfie_input_image_service.dart';
 import '../../../data/services/selfie_liveness_challenge_service.dart';
 import '../../../domain/models/kyc_capture_bundle.dart';
+import '../../../domain/models/mobile_liveness_shadow_request.dart';
+import '../../../domain/models/selfie_input_image_request.dart';
+import '../../../domain/models/selfie_liveness_challenge_request.dart';
 import '../../../domain/models/selfie_liveness_decision.dart';
 import '../../controllers/selfie_capture_ui_notifier.dart';
 import '../../controllers/thesis_debug_report_notifier.dart';
@@ -290,8 +293,12 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
     try {
       final controller = _controller;
       if (controller == null) return;
-      final inputImage =
-          _selfieInputImageService.build(controller, cameraImage);
+      final inputImage = _selfieInputImageService.build(
+        SelfieInputImageRequest(
+          controller: controller,
+          image: cameraImage,
+        ),
+      );
       if (inputImage == null) {
         _analysisFailureCount++;
         if (_analysisFailureCount <= 3 || _analysisFailureCount % 10 == 0) {
@@ -389,10 +396,12 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
     final selfieCaptureUiNotifier = ref.read(selfieCaptureUiProvider.notifier);
     final uiState = ref.read(selfieCaptureUiProvider);
     final decision = _challengeService.evaluate(
-      face: face,
-      uiState: uiState,
-      config: widget.effectiveLivenessConfig,
-      blinkPrimed: _blinkPrimed,
+      SelfieLivenessChallengeRequest(
+        face: face,
+        uiState: uiState,
+        config: widget.effectiveLivenessConfig,
+        blinkPrimed: _blinkPrimed,
+      ),
     );
 
     if (decision.primesBlink) {
@@ -520,8 +529,10 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
 
   Future<void> _runMobileLivenessShadowIfEnabled(String selfiePath) async {
     final result = await _mobileLivenessShadowService.run(
-      selfiePath: selfiePath,
-      config: widget.effectiveLivenessConfig.mobileShadow,
+      MobileLivenessShadowRequest(
+        selfiePath: selfiePath,
+        config: widget.effectiveLivenessConfig.mobileShadow,
+      ),
     );
     if (result == null) {
       return;

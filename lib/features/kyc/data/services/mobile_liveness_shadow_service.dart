@@ -1,6 +1,6 @@
 import 'package:kyc_verification_app_demo/core/ml/liveness_shadow_model.dart';
 
-import '../../presentation/models/kyc_capture_config.dart';
+import '../../domain/models/mobile_liveness_shadow_request.dart';
 
 class MobileLivenessShadowResult {
   const MobileLivenessShadowResult.success({
@@ -22,10 +22,11 @@ class MobileLivenessShadowResult {
 class MobileLivenessShadowService {
   const MobileLivenessShadowService();
 
-  Future<MobileLivenessShadowResult?> run({
-    required String selfiePath,
-    required MobileLivenessShadowConfig config,
-  }) async {
+  Future<MobileLivenessShadowResult?> run(
+    MobileLivenessShadowRequest request,
+  ) async {
+    final selfiePath = request.selfiePath;
+    final config = request.config;
     if (!config.enabled) {
       return null;
     }

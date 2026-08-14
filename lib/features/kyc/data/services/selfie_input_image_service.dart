@@ -4,11 +4,14 @@ import 'package:camera/camera.dart' as camera;
 import 'package:flutter/services.dart';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 
+import '../../domain/models/selfie_input_image_request.dart';
+
 class SelfieInputImageService {
   const SelfieInputImageService();
 
-  InputImage? build(
-      camera.CameraController controller, camera.CameraImage image) {
+  InputImage? build(SelfieInputImageRequest request) {
+    final controller = request.controller;
+    final image = request.image;
     final description = controller.description;
     final rotation = _inputImageRotationFromCamera(controller, description);
     if (rotation == null) return null;

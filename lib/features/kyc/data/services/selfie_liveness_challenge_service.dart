@@ -1,18 +1,15 @@
-import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
-
 import '../../domain/models/selfie_liveness_decision.dart';
-import '../../presentation/models/kyc_capture_config.dart';
+import '../../domain/models/selfie_liveness_challenge_request.dart';
 import '../../presentation/models/selfie_capture_ui_state.dart';
 
 class SelfieLivenessChallengeService {
   const SelfieLivenessChallengeService();
 
-  SelfieLivenessDecision evaluate({
-    required Face face,
-    required SelfieCaptureUiState uiState,
-    required SelfieLivenessConfig config,
-    required bool blinkPrimed,
-  }) {
+  SelfieLivenessDecision evaluate(SelfieLivenessChallengeRequest request) {
+    final face = request.face;
+    final uiState = request.uiState;
+    final config = request.config;
+    final blinkPrimed = request.blinkPrimed;
     switch (uiState.currentChallenge) {
       case SelfieLivenessChallenge.blink:
         final leftEyeOpen = face.leftEyeOpenProbability;
