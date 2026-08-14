@@ -272,6 +272,7 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
       if (mounted) setState(() {});
       return;
     }
+    await _resumePreviewIfNeeded();
     if (!_isStreaming) {
       await _startImageStream();
     }
@@ -644,6 +645,7 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
             .read(thesisDebugReportProvider.notifier)
             .recordDocumentFailure('No document detected. Try again.');
         HapticFeedback.lightImpact();
+        await _resumePreviewIfNeeded();
         await _startImageStream();
         return;
       }
@@ -767,7 +769,9 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
                         fit: StackFit.expand,
                         children: [
                           CameraPreview(_controller!),
-                          const DocumentOverlayWidget(),
+                          DocumentOverlayWidget(
+                            visible: !uiState.documentDetected,
+                          ),
                         ],
                       );
                     },
@@ -782,18 +786,24 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
                 text: uiState.isPermissionDenied ||
                         uiState.cameraErrorMessage != null
                     ? 'Retry camera'
+                    : uiState.documentDetected
+                        ? 'Recapture Document'
                     : (uiState.isDetecting
                         ? 'Detecting...'
                         : 'Capture Document'),
                 enabled: uiState.isPermissionDenied ||
                         uiState.cameraErrorMessage != null
                     ? true
+                    : uiState.documentDetected
+                        ? true
                     : !uiState.isDetecting &&
                         (_usesQualityGate ? uiState.isQualityGood : true),
                 onTap: uiState.isPermissionDenied ||
                         uiState.cameraErrorMessage != null
                     ? _retryCameraSetup
-                    : _captureAndDetect,
+                    : uiState.documentDetected
+                        ? _startRecaptureFlow
+                        : _captureAndDetect,
               ),
             ),
             if (kDebugMode) ...[
@@ -873,6 +883,7 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
   Future<void> _resumeCameraAfterReturn() async {
     _autoCaptureTimer?.cancel();
     _isProcessingFrame = false;
+    _isStreaming = false;
     _pendingGuidanceQuality = null;
     _pendingGuidanceCount = 0;
     _activeGuidanceQuality = null;
@@ -882,7 +893,27 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
     _lastLoggedGuidanceQuality = null;
     _lastGuidanceHoldLogged = false;
     ref.read(documentCaptureUiProvider.notifier)
-      ..setStatus('Place your ID fully inside the frame.')
+      ..setStatus('Document detected. Looks good!')
+      ..setDocumentDetected(true)
+      ..setAutoCapturing(false)
+      ..setDetecting(false)
+      ..clearError();
+    await _resumePreviewIfNeeded();
+  }
+
+  Future<void> _startRecaptureFlow() async {
+    _autoCaptureTimer?.cancel();
+    _isProcessingFrame = false;
+    _pendingGuidanceQuality = null;
+    _pendingGuidanceCount = 0;
+    _activeGuidanceQuality = null;
+    _lastGuidanceTransitionAt = Duration.zero;
+    _lastGuidanceMessage = null;
+    _lastLoggedRawQuality = null;
+    _lastLoggedGuidanceQuality = null;
+    _lastGuidanceHoldLogged = false;
+    ref.read(documentCaptureUiProvider.notifier)
+      ..setStatus('Align your ID inside the frame.')
       ..setDocumentDetected(false)
       ..setAutoCapturing(false)
       ..setDetecting(false)
@@ -955,6 +986,19 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
     final uiState = ref.read(documentCaptureUiProvider);
     if (uiState.isDetecting) return false;
     return true;
+  }
+
+  Future<void> _resumePreviewIfNeeded() async {
+    final controller = _controller;
+    if (controller == null || !controller.value.isInitialized) return;
+    if (!controller.value.isPreviewPaused) return;
+    try {
+      await controller.resumePreview();
+    } on CameraException catch (error) {
+      logPrint('Document camera resume preview ignored: ${error.code}');
+    } catch (_) {
+      logPrint('Document camera resume preview ignored.');
+    }
   }
 }
 

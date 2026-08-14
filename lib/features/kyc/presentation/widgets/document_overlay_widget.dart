@@ -2,10 +2,18 @@ import 'package:flutter/material.dart';
 import 'package:kyc_verification_app_demo/core/theme/app_colors.dart';
 
 class DocumentOverlayWidget extends StatelessWidget {
-  const DocumentOverlayWidget({super.key});
+  const DocumentOverlayWidget({
+    super.key,
+    this.visible = true,
+  });
+
+  final bool visible;
 
   @override
   Widget build(BuildContext context) {
+    if (!visible) {
+      return const SizedBox.expand();
+    }
     return CustomPaint(
       painter: _DocumentOverlayPainter(),
       child: const SizedBox.expand(),
