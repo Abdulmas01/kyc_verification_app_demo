@@ -4,30 +4,23 @@ import 'dart:io';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:kyc_verification_app_demo/core/camera/camera_lifecycle_coordinator.dart';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart'
-    show
-        Face,
-        FaceDetector,
-        FaceDetectorMode,
-        FaceDetectorOptions,
-        InputImage,
-        InputImageFormat,
-        InputImageFormatValue,
-        InputImageMetadata,
-        InputImageRotation,
-        InputImageRotationValue;
+    show Face, FaceDetector, FaceDetectorMode, FaceDetectorOptions, InputImage;
+import 'package:kyc_verification_app_demo/core/camera/camera_lifecycle_coordinator.dart';
 import 'package:kyc_verification_app_demo/core/extension/context_extention.dart';
-import 'package:kyc_verification_app_demo/core/ml/liveness_shadow_model.dart';
 import 'package:kyc_verification_app_demo/core/theme/app_spacing.dart';
 import 'package:kyc_verification_app_demo/core/utils/logger.dart';
 import 'package:kyc_verification_app_demo/core/utils/toast_utils.dart';
 import 'package:kyc_verification_app_demo/core/widget/button_widget.dart';
-import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter/services.dart';
+import 'package:permission_handler/permission_handler.dart';
 
+import '../../../data/services/mobile_liveness_shadow_service.dart';
+import '../../../data/services/selfie_input_image_service.dart';
+import '../../../data/services/selfie_liveness_challenge_service.dart';
 import '../../../domain/models/kyc_capture_bundle.dart';
+import '../../../domain/models/selfie_liveness_decision.dart';
 import '../../controllers/selfie_capture_ui_notifier.dart';
 import '../../controllers/thesis_debug_report_notifier.dart';
 import '../../models/kyc_capture_config.dart';
@@ -61,11 +54,15 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
   Future<void>? _initializeFuture;
   Future<void>? _cameraSetupFuture;
   late final CameraLifecycleCoordinator _cameraLifecycle;
+  late final SelfieInputImageService _selfieInputImageService;
+  late final SelfieLivenessChallengeService _challengeService;
+  late final MobileLivenessShadowService _mobileLivenessShadowService;
   bool _isStreaming = false;
   bool _isProcessingFrame = false;
   bool _blinkPrimed = false;
   bool _capturingSelfie = false;
   int _frameCounter = 0;
+  int _analysisFailureCount = 0;
   Timer? _challengeTimeoutTimer;
 
   late final FaceDetector _faceDetector;
@@ -78,6 +75,9 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
       logPrefix: 'Selfie camera',
       logger: logPrint,
     );
+    _selfieInputImageService = const SelfieInputImageService();
+    _challengeService = const SelfieLivenessChallengeService();
+    _mobileLivenessShadowService = const MobileLivenessShadowService();
     _faceDetector = FaceDetector(
       options: FaceDetectorOptions(
         enableContours: false,
@@ -288,10 +288,23 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
     }
     final selfieCaptureUiNotifier = ref.read(selfieCaptureUiProvider.notifier);
     try {
-      final inputImage = _inputImageFromCameraImage(cameraImage);
-      if (inputImage == null) return;
+      final controller = _controller;
+      if (controller == null) return;
+      final inputImage =
+          _selfieInputImageService.build(controller, cameraImage);
+      if (inputImage == null) {
+        _analysisFailureCount++;
+        if (_analysisFailureCount <= 3 || _analysisFailureCount % 10 == 0) {
+          logPrint(
+            'Selfie frame skipped: unsupported camera image format '
+            '(format=${cameraImage.format.raw}, planes=${cameraImage.planes.length}).',
+          );
+        }
+        return;
+      }
 
       final faces = await _faceDetector.processImage(inputImage);
+      _analysisFailureCount = 0;
       if (!mounted) return;
 
       if (faces.isEmpty) {
@@ -330,8 +343,15 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
       ref.read(thesisDebugReportProvider.notifier).recordSelfieFaceDetected(
             true,
           );
-      await _handleChallenge(face);
-    } catch (_) {
+      await _applyChallengeDecision(face);
+    } catch (error) {
+      _analysisFailureCount++;
+      if (_analysisFailureCount <= 3 || _analysisFailureCount % 10 == 0) {
+        logPrint(
+          'Selfie face analysis failed '
+          '(count=$_analysisFailureCount, error=$error).',
+        );
+      }
       if (!mounted) return;
       selfieCaptureUiNotifier.setError(
         statusMessage: 'We could not read your face clearly.',
@@ -365,98 +385,65 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
     return 'Unable to start the $lensLabel camera.';
   }
 
-  Future<void> _handleChallenge(Face face) async {
+  Future<void> _applyChallengeDecision(Face face) async {
     final selfieCaptureUiNotifier = ref.read(selfieCaptureUiProvider.notifier);
     final uiState = ref.read(selfieCaptureUiProvider);
+    final decision = _challengeService.evaluate(
+      face: face,
+      uiState: uiState,
+      config: widget.effectiveLivenessConfig,
+      blinkPrimed: _blinkPrimed,
+    );
 
-    switch (uiState.currentChallenge) {
-      case SelfieLivenessChallenge.blink:
-        final leftEyeOpen = face.leftEyeOpenProbability;
-        final rightEyeOpen = face.rightEyeOpenProbability;
-        if (leftEyeOpen == null || rightEyeOpen == null) {
-          selfieCaptureUiNotifier.setChallengeMessage(
-            'Keep your face well lit, then blink naturally.',
-            helperMessage: 'Make sure your eyes are fully visible.',
-          );
-          return;
-        }
+    if (decision.primesBlink) {
+      _blinkPrimed = true;
+    }
+    if (decision.resetsBlink) {
+      _blinkPrimed = false;
+    }
 
-        if (leftEyeOpen > widget.effectiveLivenessConfig.blinkOpenThreshold &&
-            rightEyeOpen > widget.effectiveLivenessConfig.blinkOpenThreshold) {
-          _blinkPrimed = true;
-          selfieCaptureUiNotifier.setChallengeMessage(
-            'Blink naturally to continue.',
-            helperMessage: 'We are waiting for one natural blink.',
-          );
-          return;
-        }
-
-        if (_blinkPrimed &&
-            leftEyeOpen < widget.effectiveLivenessConfig.blinkClosedThreshold &&
-            rightEyeOpen <
-                widget.effectiveLivenessConfig.blinkClosedThreshold) {
-          _blinkPrimed = false;
-          selfieCaptureUiNotifier.markBlinkComplete();
+    switch (decision.type) {
+      case SelfieLivenessDecisionType.waitForBetterLighting:
+      case SelfieLivenessDecisionType.promptBlink:
+      case SelfieLivenessDecisionType.promptTurnLeft:
+      case SelfieLivenessDecisionType.promptTurnRight:
+      case SelfieLivenessDecisionType.promptLookStraight:
+        selfieCaptureUiNotifier.setChallengeMessage(
+          decision.statusMessage ?? uiState.statusMessage,
+          helperMessage: decision.helperMessage,
+        );
+        return;
+      case SelfieLivenessDecisionType.blinkCompleted:
+        selfieCaptureUiNotifier.markBlinkComplete();
+        break;
+      case SelfieLivenessDecisionType.turnLeftCompleted:
+        selfieCaptureUiNotifier.markTurnLeftComplete();
+        break;
+      case SelfieLivenessDecisionType.turnRightCompleted:
+        selfieCaptureUiNotifier.markTurnRightComplete();
+        break;
+      case SelfieLivenessDecisionType.readyToCapture:
+        _challengeTimeoutTimer?.cancel();
+        if (decision.completedChallengeKey != null) {
           ref
               .read(thesisDebugReportProvider.notifier)
-              .recordChallengeCompleted('blink');
-          _scheduleChallengeTimeout();
-          HapticFeedback.mediumImpact();
+              .recordChallengeCompleted(decision.completedChallengeKey!);
         }
+        selfieCaptureUiNotifier.startAutoCapture();
+        HapticFeedback.selectionClick();
+        await _captureSelfie();
         return;
-      case SelfieLivenessChallenge.turnLeft:
-        final yAngle = face.headEulerAngleY ?? 0;
-        if (yAngle < -widget.effectiveLivenessConfig.headTurnThreshold) {
-          selfieCaptureUiNotifier.markTurnLeftComplete();
-          ref
-              .read(thesisDebugReportProvider.notifier)
-              .recordChallengeCompleted('turn_left');
-          _scheduleChallengeTimeout();
-          HapticFeedback.mediumImpact();
-        } else {
-          selfieCaptureUiNotifier.setChallengeMessage(
-            'Slowly turn your head to the left.',
-            helperMessage: 'Move just enough so your face angle changes.',
-          );
-        }
-        return;
-      case SelfieLivenessChallenge.turnRight:
-        final yAngle = face.headEulerAngleY ?? 0;
-        if (yAngle > widget.effectiveLivenessConfig.headTurnThreshold) {
-          selfieCaptureUiNotifier.markTurnRightComplete();
-          ref
-              .read(thesisDebugReportProvider.notifier)
-              .recordChallengeCompleted('turn_right');
-          _scheduleChallengeTimeout();
-          HapticFeedback.mediumImpact();
-        } else {
-          selfieCaptureUiNotifier.setChallengeMessage(
-            'Now turn your head to the right.',
-            helperMessage: 'Keep your face inside the oval while turning.',
-          );
-        }
-        return;
-      case SelfieLivenessChallenge.lookStraight:
-        final yAngle = face.headEulerAngleY ?? 0;
-        if (yAngle.abs() <=
-            widget.effectiveLivenessConfig.lookStraightThreshold) {
-          _challengeTimeoutTimer?.cancel();
-          ref
-              .read(thesisDebugReportProvider.notifier)
-              .recordChallengeCompleted('look_straight');
-          selfieCaptureUiNotifier.startAutoCapture();
-          HapticFeedback.selectionClick();
-          await _captureSelfie();
-        } else {
-          selfieCaptureUiNotifier.setChallengeMessage(
-            'Look straight at the camera and hold still.',
-            helperMessage: 'We are capturing your final frame.',
-          );
-        }
-        return;
-      case SelfieLivenessChallenge.complete:
+      case SelfieLivenessDecisionType.complete:
         return;
     }
+
+    if (decision.completedChallengeKey != null) {
+      ref
+          .read(thesisDebugReportProvider.notifier)
+          .recordChallengeCompleted(decision.completedChallengeKey!);
+    }
+    _scheduleChallengeTimeout();
+    HapticFeedback.mediumImpact();
   }
 
   Future<void> _captureSelfie() async {
@@ -532,37 +519,28 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
   }
 
   Future<void> _runMobileLivenessShadowIfEnabled(String selfiePath) async {
-    final shadowConfig = widget.effectiveLivenessConfig.mobileShadow;
-    if (!shadowConfig.enabled) {
+    final result = await _mobileLivenessShadowService.run(
+      selfiePath: selfiePath,
+      config: widget.effectiveLivenessConfig.mobileShadow,
+    );
+    if (result == null) {
       return;
     }
 
-    try {
-      final prediction = await LivenessShadowModel.predictFromFile(selfiePath);
-      if (prediction == null) {
-        ref
-            .read(thesisDebugReportProvider.notifier)
-            .recordMobileLivenessShadowUnavailable(
-              'Shadow liveness asset is missing or could not be loaded.',
-            );
-        return;
-      }
-
+    if (result.isAvailable) {
       ref
           .read(thesisDebugReportProvider.notifier)
           .recordMobileLivenessShadowSuccess(
-            score: prediction.liveScore,
-            latencyMs: prediction.latencyMs,
+            score: result.score!,
+            latencyMs: result.latencyMs!,
           );
-    } catch (error) {
-      ref
-          .read(thesisDebugReportProvider.notifier)
-          .recordMobileLivenessShadowUnavailable(error.toString());
-
-      if (!shadowConfig.failOpen) {
-        rethrow;
-      }
+      return;
     }
+
+    ref
+        .read(thesisDebugReportProvider.notifier)
+        .recordMobileLivenessShadowUnavailable(
+            result.errorMessage ?? 'Unknown');
   }
 
   void _scheduleChallengeTimeout() {
@@ -588,67 +566,6 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
         unawaited(_stopImageStream());
       },
     );
-  }
-
-  InputImage? _inputImageFromCameraImage(CameraImage image) {
-    final controller = _controller;
-    if (controller == null) return null;
-
-    final camera = controller.description;
-    final rotation = _inputImageRotationFromCamera(controller, camera);
-    if (rotation == null) return null;
-
-    final format = InputImageFormatValue.fromRawValue(image.format.raw);
-    if (format == null) return null;
-
-    if (Platform.isIOS && format != InputImageFormat.bgra8888) return null;
-    if (Platform.isAndroid &&
-        format != InputImageFormat.nv21 &&
-        format != InputImageFormat.yuv_420_888) {
-      return null;
-    }
-
-    final writeBuffer = WriteBuffer();
-    for (final plane in image.planes) {
-      writeBuffer.putUint8List(plane.bytes);
-    }
-    final bytes = writeBuffer.done().buffer.asUint8List();
-
-    return InputImage.fromBytes(
-      bytes: bytes,
-      metadata: InputImageMetadata(
-        size: Size(image.width.toDouble(), image.height.toDouble()),
-        rotation: rotation,
-        format: format,
-        bytesPerRow: image.planes.first.bytesPerRow,
-      ),
-    );
-  }
-
-  InputImageRotation? _inputImageRotationFromCamera(
-    CameraController controller,
-    CameraDescription camera,
-  ) {
-    if (Platform.isIOS) {
-      return InputImageRotationValue.fromRawValue(camera.sensorOrientation);
-    }
-
-    const orientations = {
-      DeviceOrientation.portraitUp: 0,
-      DeviceOrientation.landscapeLeft: 90,
-      DeviceOrientation.portraitDown: 180,
-      DeviceOrientation.landscapeRight: 270,
-    };
-
-    final rotationCompensation =
-        orientations[controller.value.deviceOrientation];
-    if (rotationCompensation == null) return null;
-
-    final adjustedRotation = camera.lensDirection == CameraLensDirection.front
-        ? (camera.sensorOrientation + rotationCompensation) % 360
-        : (camera.sensorOrientation - rotationCompensation + 360) % 360;
-
-    return InputImageRotationValue.fromRawValue(adjustedRotation);
   }
 
   @override
