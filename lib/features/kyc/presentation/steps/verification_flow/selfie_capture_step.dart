@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:kyc_verification_app_demo/core/camera/camera_lifecycle_coordinator.dart';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart'
     show
@@ -59,13 +60,13 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
   CameraController? _controller;
   Future<void>? _initializeFuture;
   Future<void>? _cameraSetupFuture;
+  late final CameraLifecycleCoordinator _cameraLifecycle;
   bool _isStreaming = false;
   bool _isProcessingFrame = false;
   bool _blinkPrimed = false;
   bool _capturingSelfie = false;
   int _frameCounter = 0;
   Timer? _challengeTimeoutTimer;
-  Future<void>? _controllerDisposeFuture;
 
   late final FaceDetector _faceDetector;
 
@@ -73,6 +74,10 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _cameraLifecycle = CameraLifecycleCoordinator(
+      logPrefix: 'Selfie camera',
+      logger: logPrint,
+    );
     _faceDetector = FaceDetector(
       options: FaceDetectorOptions(
         enableContours: false,
@@ -112,39 +117,10 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
   }
 
   Future<void> _disposeController() async {
-    final existing = _controllerDisposeFuture;
-    if (existing != null) return existing;
-    late final Future<void> future;
-    future = _disposeControllerInternal().whenComplete(() {
-      if (identical(_controllerDisposeFuture, future)) {
-        _controllerDisposeFuture = null;
-      }
-    });
-    _controllerDisposeFuture = future;
-    return future;
-  }
-
-  Future<void> _disposeControllerInternal() async {
     final controller = _controller;
     _controller = null;
     _isStreaming = false;
-    if (controller == null) return;
-    try {
-      if (controller.value.isStreamingImages) {
-        await controller.stopImageStream();
-      }
-    } on CameraException catch (error) {
-      logPrint('Selfie camera stop stream ignored during dispose: ${error.code}');
-    } catch (_) {
-      logPrint('Selfie camera stop stream ignored during dispose.');
-    }
-    try {
-      await controller.dispose();
-    } on CameraException catch (error) {
-      logPrint('Selfie camera dispose ignored: ${error.code}');
-    } catch (_) {
-      logPrint('Selfie camera dispose ignored.');
-    }
+    await _cameraLifecycle.disposeController(controller);
   }
 
   Future<void> _initCamera() async {
@@ -223,6 +199,7 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
 
   @override
   void dispose() {
+    _cameraLifecycle.markDisposed();
     WidgetsBinding.instance.removeObserver(this);
     _challengeTimeoutTimer?.cancel();
     unawaited(_disposeController());
@@ -232,7 +209,7 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (!mounted) return;
+    if (!mounted || _cameraLifecycle.isDisposed) return;
     switch (state) {
       case AppLifecycleState.resumed:
         unawaited(_resumeCamera());
@@ -247,12 +224,21 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
   }
 
   Future<void> _pauseCamera() async {
+    await _cameraLifecycle.queueTransition(_pauseCameraInternal);
+  }
+
+  Future<void> _pauseCameraInternal() async {
     _challengeTimeoutTimer?.cancel();
     _isProcessingFrame = false;
-    await _stopImageStream();
+    await _cameraLifecycle.stopImageStreamImmediate(_controller);
   }
 
   Future<void> _resumeCamera() async {
+    await _cameraLifecycle.queueTransition(_resumeCameraInternal);
+  }
+
+  Future<void> _resumeCameraInternal() async {
+    if (!_cameraLifecycle.isRouteActive) return;
     final uiState = ref.read(selfieCaptureUiProvider);
     if (uiState.isPermissionDenied || uiState.isPermanentlyDenied) {
       return;
@@ -262,49 +248,44 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
       if (mounted) setState(() {});
       return;
     }
-    if ((_controller?.value.isStreamingImages ?? false) && !_isStreaming) {
-      _isStreaming = true;
-    }
+    _cameraLifecycle.syncStreamingFromController(_controller);
+    _isStreaming = _cameraLifecycle.isStreaming;
     if (!_isStreaming && !_capturingSelfie) {
       _scheduleChallengeTimeout();
-      await _startImageStream();
+      await _startImageStreamInternal();
     }
   }
 
   Future<void> _startImageStream() async {
-    final controller = _controller;
-    if (controller == null) return;
-    if (controller.value.isStreamingImages) {
-      _isStreaming = true;
-      return;
-    }
-    if (_isStreaming) return;
-    await controller.startImageStream((cameraImage) {
-      if (!mounted || _capturingSelfie) return;
-      _frameCounter++;
-      if (_frameCounter % widget.effectiveLivenessConfig.frameStride != 0) {
-        return;
-      }
-      if (_isProcessingFrame) return;
+    await _cameraLifecycle.startImageStream(
+      controller: _controller,
+      onImage: _onCameraImage,
+    );
+  }
 
-      _isProcessingFrame = true;
-      unawaited(_processCameraFrame(cameraImage));
-    });
-    _isStreaming = true;
+  Future<void> _startImageStreamInternal() async {
+    await _cameraLifecycle.startImageStreamImmediate(
+      controller: _controller,
+      onImage: _onCameraImage,
+    );
+    _isStreaming = _cameraLifecycle.isStreaming;
   }
 
   Future<void> _stopImageStream() async {
-    final controller = _controller;
-    if (controller == null) return;
-    if (!(controller.value.isStreamingImages || _isStreaming)) {
-      _isStreaming = false;
-      return;
-    }
-    await controller.stopImageStream();
-    _isStreaming = false;
+    await _cameraLifecycle.stopImageStream(_controller);
+    _isStreaming = _cameraLifecycle.isStreaming;
+  }
+
+  Future<void> _stopImageStreamInternal() async {
+    await _cameraLifecycle.stopImageStreamImmediate(_controller);
+    _isStreaming = _cameraLifecycle.isStreaming;
   }
 
   Future<void> _processCameraFrame(CameraImage cameraImage) async {
+    if (!_cameraLifecycle.isRouteActive || _cameraLifecycle.isDisposed) {
+      _isProcessingFrame = false;
+      return;
+    }
     final selfieCaptureUiNotifier = ref.read(selfieCaptureUiProvider.notifier);
     try {
       final inputImage = _inputImageFromCameraImage(cameraImage);
@@ -483,7 +464,7 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
     if (_controller == null || _capturingSelfie) return;
     _capturingSelfie = true;
     try {
-      await _stopImageStream();
+      await _stopImageStreamInternal();
       selfieCaptureUiNotifier.startCapture();
       final file = await _controller!.takePicture();
       final inputImage = InputImage.fromFilePath(file.path);
@@ -515,7 +496,8 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
       await _runMobileLivenessShadowIfEnabled(file.path);
       if (!mounted) return;
       HapticFeedback.heavyImpact();
-      Navigator.of(context).push(
+      _cameraLifecycle.markRouteActive(false);
+      await Navigator.of(context).push(
         MaterialPageRoute(
           builder: (_) => ProcessingStep(
             captureBundle: widget.captureBundle.copyWith(
@@ -524,6 +506,8 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
           ),
         ),
       );
+      if (!mounted) return;
+      _cameraLifecycle.markRouteActive(true);
     } catch (e) {
       if (!mounted) return;
       selfieCaptureUiNotifier.requestRedo(
@@ -538,11 +522,11 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
           );
       HapticFeedback.lightImpact();
       ToastUtil.showErrorToast('Selfie capture failed. Try again.');
-      await _startImageStream();
+      await _startImageStreamInternal();
     } finally {
       _capturingSelfie = false;
       if (mounted && ref.read(selfieCaptureUiProvider).shouldRedo) {
-        await _stopImageStream();
+        await _stopImageStreamInternal();
       }
     }
   }
@@ -671,110 +655,123 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
   Widget build(BuildContext context) {
     final uiState = ref.watch(selfieCaptureUiProvider);
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Selfie & Liveness'),
-      ),
-      body: Padding(
-        padding: AppSpacing.pad16,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Follow the prompts',
-              style: context.textTheme.headlineSmall,
-            ),
-            const SizedBox(height: AppSpacing.s8),
-            Text(
-              'We’ll ask you to blink and turn your head to confirm liveness.',
-              style: context.textTheme.bodyMedium,
-            ),
-            const SizedBox(height: AppSpacing.s16),
-            _ChallengeProgressCard(uiState: uiState),
-            const SizedBox(height: AppSpacing.s12),
-            _ChallengeStatusBanner(uiState: uiState),
-            if (uiState.hasError) ...[
+    return PopScope(
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) {
+          _cameraLifecycle.markRouteActive(false);
+          unawaited(_pauseCamera());
+        }
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Selfie & Liveness'),
+        ),
+        body: Padding(
+          padding: AppSpacing.pad16,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Follow the prompts',
+                style: context.textTheme.headlineSmall,
+              ),
               const SizedBox(height: AppSpacing.s8),
-              _ErrorBanner(message: uiState.errorMessage ?? ''),
-            ],
-            const SizedBox(height: AppSpacing.s16),
-            Expanded(
-              child: Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 420),
-                  child: FutureBuilder<void>(
-                    future: _initializeFuture,
-                    builder: (context, snapshot) {
-                      if (uiState.isPermissionDenied ||
-                          uiState.isPermanentlyDenied) {
-                        return _PermissionStateCard(
-                          permanentlyDenied: uiState.isPermanentlyDenied,
-                          onRetry: _retryCameraSetup,
+              Text(
+                'We’ll ask you to blink and turn your head to confirm liveness.',
+                style: context.textTheme.bodyMedium,
+              ),
+              const SizedBox(height: AppSpacing.s16),
+              _ChallengeProgressCard(uiState: uiState),
+              const SizedBox(height: AppSpacing.s12),
+              _ChallengeStatusBanner(uiState: uiState),
+              if (uiState.hasError) ...[
+                const SizedBox(height: AppSpacing.s8),
+                _ErrorBanner(message: uiState.errorMessage ?? ''),
+              ],
+              const SizedBox(height: AppSpacing.s16),
+              Expanded(
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 420),
+                    child: FutureBuilder<void>(
+                      future: _initializeFuture,
+                      builder: (context, snapshot) {
+                        if (uiState.isPermissionDenied ||
+                            uiState.isPermanentlyDenied) {
+                          return _PermissionStateCard(
+                            permanentlyDenied: uiState.isPermanentlyDenied,
+                            onRetry: _retryCameraSetup,
+                          );
+                        }
+
+                        if (uiState.cameraErrorMessage != null) {
+                          return _CameraErrorCard(
+                            message: uiState.cameraErrorMessage!,
+                            onRetry: _retryCameraSetup,
+                          );
+                        }
+
+                        if (snapshot.connectionState != ConnectionState.done) {
+                          return const Center(
+                              child: CircularProgressIndicator());
+                        }
+
+                        if (_controller == null ||
+                            !_controller!.value.isInitialized) {
+                          return Center(
+                            child: Text(
+                              'Camera unavailable',
+                              style: context.textTheme.bodySmall,
+                            ),
+                          );
+                        }
+
+                        return _SelfieCameraStage(
+                          controller: _controller!,
+                          isFaceDetected: uiState.isFaceDetected,
                         );
-                      }
-
-                      if (uiState.cameraErrorMessage != null) {
-                        return _CameraErrorCard(
-                          message: uiState.cameraErrorMessage!,
-                          onRetry: _retryCameraSetup,
-                        );
-                      }
-
-                      if (snapshot.connectionState != ConnectionState.done) {
-                        return const Center(child: CircularProgressIndicator());
-                      }
-
-                      if (_controller == null ||
-                          !_controller!.value.isInitialized) {
-                        return Center(
-                          child: Text(
-                            'Camera unavailable',
-                            style: context.textTheme.bodySmall,
-                          ),
-                        );
-                      }
-
-                      return _SelfieCameraStage(
-                        controller: _controller!,
-                        isFaceDetected: uiState.isFaceDetected,
-                      );
-                    },
+                      },
+                    ),
                   ),
                 ),
               ),
-            ),
-            const SizedBox(height: AppSpacing.s16),
-            SizedBox(
-              width: double.infinity,
-              child: ButtonWidget(
-                text: uiState.isAutoCapturing
-                    ? 'Capturing...'
-                    : (uiState.isPermissionDenied ||
-                            uiState.cameraErrorMessage != null)
-                        ? 'Retry camera'
-                        : uiState.shouldRedo
-                            ? 'Redo liveness check'
-                            : 'Restart liveness check',
-                enabled: !uiState.isAutoCapturing,
-                onTap: uiState.isPermissionDenied ||
-                        uiState.cameraErrorMessage != null
-                    ? _retryCameraSetup
-                    : () {
-                        ref.read(selfieCaptureUiProvider.notifier).resetFlow();
-                        _blinkPrimed = false;
-                        _scheduleChallengeTimeout();
-                        unawaited(_startImageStream());
-                        HapticFeedback.selectionClick();
-                      },
+              const SizedBox(height: AppSpacing.s16),
+              SizedBox(
+                width: double.infinity,
+                child: ButtonWidget(
+                  text: uiState.isAutoCapturing
+                      ? 'Capturing...'
+                      : (uiState.isPermissionDenied ||
+                              uiState.cameraErrorMessage != null)
+                          ? 'Retry camera'
+                          : uiState.shouldRedo
+                              ? 'Redo liveness check'
+                              : 'Restart liveness check',
+                  enabled: !uiState.isAutoCapturing,
+                  onTap: uiState.isPermissionDenied ||
+                          uiState.cameraErrorMessage != null
+                      ? _retryCameraSetup
+                      : () {
+                          ref
+                              .read(selfieCaptureUiProvider.notifier)
+                              .resetFlow();
+                          _blinkPrimed = false;
+                          _scheduleChallengeTimeout();
+                          _cameraLifecycle.markRouteActive(true);
+                          unawaited(_startImageStream());
+                          HapticFeedback.selectionClick();
+                        },
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
   }
 
   Future<void> _retryCameraSetup() async {
+    _cameraLifecycle.markRouteActive(true);
     _blinkPrimed = false;
     _capturingSelfie = false;
     _challengeTimeoutTimer?.cancel();
@@ -801,6 +798,18 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
         'fail_open': config.mobileShadow.failOpen,
       },
     };
+  }
+
+  void _onCameraImage(CameraImage cameraImage) {
+    if (!mounted || _capturingSelfie) return;
+    _frameCounter++;
+    if (_frameCounter % widget.effectiveLivenessConfig.frameStride != 0) {
+      return;
+    }
+    if (_isProcessingFrame) return;
+
+    _isProcessingFrame = true;
+    unawaited(_processCameraFrame(cameraImage));
   }
 }
 

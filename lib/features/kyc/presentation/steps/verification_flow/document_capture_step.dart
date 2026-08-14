@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_mlkit_object_detection/google_mlkit_object_detection.dart';
+import 'package:kyc_verification_app_demo/core/camera/camera_lifecycle_coordinator.dart';
 import 'package:kyc_verification_app_demo/core/extension/context_extention.dart';
 import 'package:kyc_verification_app_demo/core/ml/quality_model.dart';
 import 'package:kyc_verification_app_demo/core/ml/quality_isolate.dart';
@@ -50,9 +51,9 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
   CameraController? _controller;
   Future<void>? _initializeFuture;
   Future<void>? _cameraSetupFuture;
+  late final CameraLifecycleCoordinator _cameraLifecycle;
   late final ObjectDetector _objectDetector;
   Timer? _autoCaptureTimer;
-  bool _isStreaming = false;
   bool _isProcessingFrame = false;
   int _frameCounter = 0;
   QualityIsolate? _qualityIsolate;
@@ -67,7 +68,6 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
   bool _lastGuidanceHoldLogged = false;
   bool _pendingDebugSampleExport = false;
   bool _isNavigatingToSelfie = false;
-  Future<void>? _controllerDisposeFuture;
 
   static const double _strongNegativeGuidanceThreshold = 0.50;
   static const double _strongNegativeImmediateThreshold = 0.65;
@@ -83,6 +83,10 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
     _sessionStopwatch.start();
     _frameStride = widget.effectiveCaptureConfig.initialFrameStride;
     WidgetsBinding.instance.addObserver(this);
+    _cameraLifecycle = CameraLifecycleCoordinator(
+      logPrefix: 'Document camera',
+      logger: logPrint,
+    );
     _objectDetector = ObjectDetector(
       options: ObjectDetectorOptions(
         mode: DetectionMode.single,
@@ -118,39 +122,9 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
   }
 
   Future<void> _disposeController() async {
-    final existing = _controllerDisposeFuture;
-    if (existing != null) return existing;
-    late final Future<void> future;
-    future = _disposeControllerInternal().whenComplete(() {
-      if (identical(_controllerDisposeFuture, future)) {
-        _controllerDisposeFuture = null;
-      }
-    });
-    _controllerDisposeFuture = future;
-    return future;
-  }
-
-  Future<void> _disposeControllerInternal() async {
     final controller = _controller;
     _controller = null;
-    _isStreaming = false;
-    if (controller == null) return;
-    try {
-      if (controller.value.isStreamingImages) {
-        await controller.stopImageStream();
-      }
-    } on CameraException catch (error) {
-      logPrint('Document camera stop stream ignored during dispose: ${error.code}');
-    } catch (_) {
-      logPrint('Document camera stop stream ignored during dispose.');
-    }
-    try {
-      await controller.dispose();
-    } on CameraException catch (error) {
-      logPrint('Document camera dispose ignored: ${error.code}');
-    } catch (_) {
-      logPrint('Document camera dispose ignored.');
-    }
+    await _cameraLifecycle.disposeController(controller);
   }
 
   Future<void> _initCamera() async {
@@ -228,6 +202,7 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
 
   @override
   void dispose() {
+    _cameraLifecycle.markDisposed();
     WidgetsBinding.instance.removeObserver(this);
     _autoCaptureTimer?.cancel();
     unawaited(_disposeController());
@@ -238,31 +213,37 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (!mounted) return;
+    if (!mounted || _cameraLifecycle.isDisposed) return;
     switch (state) {
       case AppLifecycleState.resumed:
-        _resumeCamera();
+        unawaited(_resumeCamera());
         break;
       case AppLifecycleState.inactive:
       case AppLifecycleState.paused:
       case AppLifecycleState.detached:
       case AppLifecycleState.hidden:
-        _pauseCamera();
+        unawaited(_pauseCamera());
         break;
     }
   }
 
-  Future<void> _pauseCamera() async {
+  Future<void> _pauseCamera() {
+    return _cameraLifecycle.queueTransition(_pauseCameraInternal);
+  }
+
+  Future<void> _pauseCameraInternal() async {
     _autoCaptureTimer?.cancel();
     _frameStride = widget.effectiveCaptureConfig.initialFrameStride;
     _isProcessingFrame = false;
-    if (_controller?.value.isStreamingImages ?? false) {
-      await _controller?.stopImageStream();
-      _isStreaming = false;
-    }
+    await _cameraLifecycle.stopImageStreamImmediate(_controller);
   }
 
-  Future<void> _resumeCamera() async {
+  Future<void> _resumeCamera() {
+    return _cameraLifecycle.queueTransition(_resumeCameraInternal);
+  }
+
+  Future<void> _resumeCameraInternal() async {
+    if (!_cameraLifecycle.isRouteActive) return;
     final uiState = ref.read(documentCaptureUiProvider);
     if (uiState.isPermissionDenied || uiState.isPermanentlyDenied) {
       return;
@@ -273,37 +254,28 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
       return;
     }
     await _resumePreviewIfNeeded();
-    if ((_controller?.value.isStreamingImages ?? false) && !_isStreaming) {
-      _isStreaming = true;
-    }
-    if (!_isStreaming) {
-      await _startImageStream();
+    _cameraLifecycle.syncStreamingFromController(_controller);
+    if (!_cameraLifecycle.isStreaming) {
+      await _startImageStreamInternal();
     }
   }
 
-  Future<void> _startImageStream() async {
-    final controller = _controller;
-    if (controller == null) return;
-    if (controller.value.isStreamingImages) {
-      _isStreaming = true;
-      return;
-    }
-    if (_isStreaming) return;
-    await controller.startImageStream((cameraImage) {
-      if (!mounted) return;
-      _frameCounter++;
-      if (_frameCounter % _frameStride != 0) return;
-      if (_isProcessingFrame) return;
+  Future<void> _startImageStream() {
+    return _cameraLifecycle.startImageStream(
+      controller: _controller,
+      onImage: _onCameraImage,
+    );
+  }
 
-      _isProcessingFrame = true;
-      final payload = _qualityIsolate?.buildPayload(cameraImage);
-      if (payload == null) {
-        _isProcessingFrame = false;
-        return;
-      }
-      unawaited(_processPayload(payload));
-    });
-    _isStreaming = true;
+  Future<void> _startImageStreamInternal() async {
+    await _cameraLifecycle.startImageStreamImmediate(
+      controller: _controller,
+      onImage: _onCameraImage,
+    );
+  }
+
+  Future<void> _stopImageStreamInternal() async {
+    await _cameraLifecycle.stopImageStreamImmediate(_controller);
   }
 
   Future<void> _processPayload(Map<String, Object?> payload) async {
@@ -636,10 +608,7 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
     notifier.setStatus('Detecting document...');
 
     try {
-      if (_controller!.value.isStreamingImages) {
-        await _controller!.stopImageStream();
-        _isStreaming = false;
-      }
+      await _stopImageStreamInternal();
 
       final file = await _controller!.takePicture();
       final inputImage = InputImage.fromFilePath(file.path);
@@ -677,6 +646,7 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
       HapticFeedback.mediumImpact();
 
       _isNavigatingToSelfie = true;
+      _cameraLifecycle.markRouteActive(false);
       await Navigator.of(context).push(
         MaterialPageRoute(
           builder: (_) => SelfieCaptureStep(
@@ -686,10 +656,12 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
       );
       if (!mounted) return;
       _isNavigatingToSelfie = false;
+      _cameraLifecycle.markRouteActive(true);
       await _resumeCameraAfterReturn();
     } catch (e) {
       if (!mounted) return;
       _isNavigatingToSelfie = false;
+      _cameraLifecycle.markRouteActive(true);
       notifier.setError('Capture failed. Please try again.');
       ref
           .read(thesisDebugReportProvider.notifier)
@@ -699,7 +671,7 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
       if (mounted) {
         notifier.setDetecting(false);
         if (_controller != null &&
-            !_isStreaming &&
+            !_cameraLifecycle.isStreaming &&
             !_isNavigatingToSelfie &&
             !_controller!.value.isTakingPicture) {
           await _startImageStream();
@@ -712,138 +684,147 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
   Widget build(BuildContext context) {
     final uiState = ref.watch(documentCaptureUiProvider);
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Document Capture'),
-      ),
-      body: Padding(
-        padding: AppSpacing.pad16,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Place your ID inside the frame',
-              style: context.textTheme.headlineSmall,
-            ),
-            const SizedBox(height: AppSpacing.s8),
-            Text(
-              'We will guide you to get a clear, glare‑free capture.',
-              style: context.textTheme.bodyMedium,
-            ),
-            const SizedBox(height: AppSpacing.s12),
-            Text(uiState.statusMessage, style: context.textTheme.bodySmall),
-            if (uiState.hasError) ...[
+    return PopScope(
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) {
+          _cameraLifecycle.markRouteActive(false);
+          unawaited(_pauseCamera());
+        }
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Document Capture'),
+        ),
+        body: Padding(
+          padding: AppSpacing.pad16,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Place your ID inside the frame',
+                style: context.textTheme.headlineSmall,
+              ),
               const SizedBox(height: AppSpacing.s8),
-              _buildErrorBanner(context, uiState.errorMessage ?? ''),
-            ],
-            const SizedBox(height: AppSpacing.s16),
-            Expanded(
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(16),
-                child: Container(
-                  color: Theme.of(context).colorScheme.surface,
-                  child: FutureBuilder<void>(
-                    future: _initializeFuture,
-                    builder: (context, snapshot) {
-                      if (snapshot.connectionState != ConnectionState.done) {
-                        return const Center(child: CircularProgressIndicator());
-                      }
+              Text(
+                'We will guide you to get a clear, glare‑free capture.',
+                style: context.textTheme.bodyMedium,
+              ),
+              const SizedBox(height: AppSpacing.s12),
+              Text(uiState.statusMessage, style: context.textTheme.bodySmall),
+              if (uiState.hasError) ...[
+                const SizedBox(height: AppSpacing.s8),
+                _buildErrorBanner(context, uiState.errorMessage ?? ''),
+              ],
+              const SizedBox(height: AppSpacing.s16),
+              Expanded(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(16),
+                  child: Container(
+                    color: Theme.of(context).colorScheme.surface,
+                    child: FutureBuilder<void>(
+                      future: _initializeFuture,
+                      builder: (context, snapshot) {
+                        if (snapshot.connectionState != ConnectionState.done) {
+                          return const Center(
+                              child: CircularProgressIndicator());
+                        }
 
-                      if (uiState.isPermissionDenied ||
-                          uiState.isPermanentlyDenied) {
-                        return _PermissionStateCard(
-                          permanentlyDenied: uiState.isPermanentlyDenied,
-                          onRetry: _retryCameraSetup,
+                        if (uiState.isPermissionDenied ||
+                            uiState.isPermanentlyDenied) {
+                          return _PermissionStateCard(
+                            permanentlyDenied: uiState.isPermanentlyDenied,
+                            onRetry: _retryCameraSetup,
+                          );
+                        }
+
+                        if (uiState.cameraErrorMessage != null) {
+                          return _CameraErrorCard(
+                            message: uiState.cameraErrorMessage!,
+                            onRetry: _retryCameraSetup,
+                          );
+                        }
+
+                        if (_controller == null ||
+                            !_controller!.value.isInitialized) {
+                          return Center(
+                            child: Text(
+                              'Camera unavailable',
+                              style: context.textTheme.bodySmall,
+                            ),
+                          );
+                        }
+
+                        return Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            CameraPreview(_controller!),
+                            DocumentOverlayWidget(
+                              visible: !uiState.documentDetected,
+                            ),
+                          ],
                         );
-                      }
-
-                      if (uiState.cameraErrorMessage != null) {
-                        return _CameraErrorCard(
-                          message: uiState.cameraErrorMessage!,
-                          onRetry: _retryCameraSetup,
-                        );
-                      }
-
-                      if (_controller == null ||
-                          !_controller!.value.isInitialized) {
-                        return Center(
-                          child: Text(
-                            'Camera unavailable',
-                            style: context.textTheme.bodySmall,
-                          ),
-                        );
-                      }
-
-                      return Stack(
-                        fit: StackFit.expand,
-                        children: [
-                          CameraPreview(_controller!),
-                          DocumentOverlayWidget(
-                            visible: !uiState.documentDetected,
-                          ),
-                        ],
-                      );
-                    },
+                      },
+                    ),
                   ),
                 ),
               ),
-            ),
-            const SizedBox(height: AppSpacing.s16),
-            SizedBox(
-              width: double.infinity,
-              child: ButtonWidget(
-                text: uiState.isPermissionDenied ||
-                        uiState.cameraErrorMessage != null
-                    ? 'Retry camera'
-                    : uiState.documentDetected
-                        ? 'Recapture Document'
-                    : (uiState.isDetecting
-                        ? 'Detecting...'
-                        : 'Capture Document'),
-                enabled: uiState.isPermissionDenied ||
-                        uiState.cameraErrorMessage != null
-                    ? true
-                    : uiState.documentDetected
-                        ? true
-                    : !uiState.isDetecting &&
-                        (_usesQualityGate ? uiState.isQualityGood : true),
-                onTap: uiState.isPermissionDenied ||
-                        uiState.cameraErrorMessage != null
-                    ? _retryCameraSetup
-                    : uiState.documentDetected
-                        ? _startRecaptureFlow
-                        : _captureAndDetect,
-              ),
-            ),
-            if (kDebugMode) ...[
-              const SizedBox(height: AppSpacing.s8),
+              const SizedBox(height: AppSpacing.s16),
               SizedBox(
                 width: double.infinity,
-                child: OutlinedButton(
-                  onPressed: () {
-                    setState(() {
-                      _pendingDebugSampleExport = true;
-                    });
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text(
-                          'Next live quality inference will be exported.',
-                        ),
-                      ),
-                    );
-                  },
-                  child: const Text('Export Live Quality Sample'),
+                child: ButtonWidget(
+                  text: uiState.isPermissionDenied ||
+                          uiState.cameraErrorMessage != null
+                      ? 'Retry camera'
+                      : uiState.documentDetected
+                          ? 'Recapture Document'
+                          : (uiState.isDetecting
+                              ? 'Detecting...'
+                              : 'Capture Document'),
+                  enabled: uiState.isPermissionDenied ||
+                          uiState.cameraErrorMessage != null
+                      ? true
+                      : uiState.documentDetected
+                          ? true
+                          : !uiState.isDetecting &&
+                              (_usesQualityGate ? uiState.isQualityGood : true),
+                  onTap: uiState.isPermissionDenied ||
+                          uiState.cameraErrorMessage != null
+                      ? _retryCameraSetup
+                      : uiState.documentDetected
+                          ? _startRecaptureFlow
+                          : _captureAndDetect,
                 ),
               ),
+              if (kDebugMode) ...[
+                const SizedBox(height: AppSpacing.s8),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton(
+                    onPressed: () {
+                      setState(() {
+                        _pendingDebugSampleExport = true;
+                      });
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text(
+                            'Next live quality inference will be exported.',
+                          ),
+                        ),
+                      );
+                    },
+                    child: const Text('Export Live Quality Sample'),
+                  ),
+                ),
+              ],
+              if (uiState.isAutoCapturing) ...[
+                const SizedBox(height: AppSpacing.s8),
+                Text(
+                  'Auto‑capturing...',
+                  style: context.textTheme.bodySmall,
+                ),
+              ],
             ],
-            if (uiState.isAutoCapturing) ...[
-              const SizedBox(height: AppSpacing.s8),
-              Text(
-                'Auto‑capturing...',
-                style: context.textTheme.bodySmall,
-              ),
-            ],
-          ],
+          ),
         ),
       ),
     );
@@ -871,6 +852,7 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
   }
 
   Future<void> _retryCameraSetup() async {
+    _cameraLifecycle.markRouteActive(true);
     _autoCaptureTimer?.cancel();
     _isProcessingFrame = false;
     _pendingGuidanceQuality = null;
@@ -892,7 +874,7 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
   Future<void> _resumeCameraAfterReturn() async {
     _autoCaptureTimer?.cancel();
     _isProcessingFrame = false;
-    _isStreaming = false;
+    _cameraLifecycle.syncStreamingFromController(null);
     _pendingGuidanceQuality = null;
     _pendingGuidanceCount = 0;
     _activeGuidanceQuality = null;
@@ -911,6 +893,7 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
   }
 
   Future<void> _startRecaptureFlow() async {
+    _cameraLifecycle.markRouteActive(true);
     _autoCaptureTimer?.cancel();
     _isProcessingFrame = false;
     _pendingGuidanceQuality = null;
@@ -987,8 +970,10 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
 
   bool get _shouldProcessLiveQualityFrames {
     if (!mounted) return false;
+    if (_cameraLifecycle.isDisposed) return false;
+    if (!_cameraLifecycle.isRouteActive) return false;
     if (_isNavigatingToSelfie) return false;
-    if (!_isStreaming) return false;
+    if (!_cameraLifecycle.isStreaming) return false;
     final controller = _controller;
     if (controller == null || !controller.value.isInitialized) return false;
     if (controller.value.isTakingPicture) return false;
@@ -1008,6 +993,21 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
     } catch (_) {
       logPrint('Document camera resume preview ignored.');
     }
+  }
+
+  void _onCameraImage(CameraImage cameraImage) {
+    if (!mounted) return;
+    _frameCounter++;
+    if (_frameCounter % _frameStride != 0) return;
+    if (_isProcessingFrame) return;
+
+    _isProcessingFrame = true;
+    final payload = _qualityIsolate?.buildPayload(cameraImage);
+    if (payload == null) {
+      _isProcessingFrame = false;
+      return;
+    }
+    unawaited(_processPayload(payload));
   }
 }
 
