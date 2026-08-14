@@ -616,33 +616,35 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
 
       if (!mounted) return;
       final detectedObject = objects.isNotEmpty ? objects.first : null;
-      if (detectedObject == null) {
-        notifier.setDocumentDetected(false);
-        notifier.setError('No document detected. Try again.');
-        ref
-            .read(thesisDebugReportProvider.notifier)
-            .recordDocumentFailure('No document detected. Try again.');
-        HapticFeedback.lightImpact();
-        await _resumePreviewIfNeeded();
-        await _startImageStream();
-        return;
-      }
+      final usedGuideCropFallback = detectedObject == null;
 
       final normalized = await ImageUtils.normalizeDocumentImage(
         inputPath: file.path,
-        boundingBox: detectedObject.boundingBox,
+        boundingBox: detectedObject?.boundingBox,
+        fallbackToCenteredGuideCrop: true,
       );
 
       if (!mounted) return;
       notifier.setDocumentDetected(true);
-      notifier.setStatus('Document detected. Looks good!');
+      notifier.setStatus(
+        usedGuideCropFallback
+            ? 'Document captured from the guide frame.'
+            : 'Document detected. Looks good!',
+      );
       notifier.clearError();
       ref.read(thesisDebugReportProvider.notifier).recordDocumentCapture(
             detected: true,
             documentPath: file.path,
             normalizedPath: normalized.path,
-            statusMessage: 'Document detected. Looks good!',
+            statusMessage: usedGuideCropFallback
+                ? 'Document captured from the guide frame.'
+                : 'Document detected. Looks good!',
           );
+      logPrint(
+        usedGuideCropFallback
+            ? 'Document capture used centered guide crop fallback after detector miss.'
+            : 'Document capture used object detector bounding box.',
+      );
       HapticFeedback.mediumImpact();
 
       _isNavigatingToSelfie = true;

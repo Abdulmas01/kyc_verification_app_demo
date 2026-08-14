@@ -12,6 +12,7 @@ class ImageUtils {
     List<Offset>? corners,
     int outputWidth = 856,
     int outputHeight = 540,
+    bool fallbackToCenteredGuideCrop = false,
   }) async {
     final bytes = await File(inputPath).readAsBytes();
     final decoded = img.decodeImage(bytes);
@@ -30,6 +31,13 @@ class ImageUtils {
       final right = corners.map((p) => p.dx).reduce(max);
       final bottom = corners.map((p) => p.dy).reduce(max);
       cropRect = Rect.fromLTRB(left, top, right, bottom);
+    }
+
+    if (cropRect == null && fallbackToCenteredGuideCrop) {
+      cropRect = _centeredGuideCropRect(
+        imageWidth: oriented.width.toDouble(),
+        imageHeight: oriented.height.toDouble(),
+      );
     }
 
     if (cropRect != null) {
@@ -65,5 +73,22 @@ class ImageUtils {
     final outputFile = File(outputPath);
     await outputFile.writeAsBytes(img.encodeJpg(resized, quality: 90));
     return outputFile;
+  }
+
+  static Rect _centeredGuideCropRect({
+    required double imageWidth,
+    required double imageHeight,
+  }) {
+    final guideWidth = imageWidth * 0.86;
+    var guideHeight = guideWidth * 0.63;
+
+    if (guideHeight > imageHeight * 0.82) {
+      guideHeight = imageHeight * 0.82;
+    }
+
+    final left = (imageWidth - guideWidth) / 2;
+    final top = (imageHeight - guideHeight) / 2;
+
+    return Rect.fromLTWH(left, top, guideWidth, guideHeight);
   }
 }

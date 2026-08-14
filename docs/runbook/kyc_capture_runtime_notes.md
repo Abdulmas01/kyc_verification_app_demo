@@ -200,8 +200,114 @@ If performance becomes a product blocker later, the next low-risk levers are:
 Avoid overengineering this until device testing shows the current UX is
 insufficient.
 
+## 8. Shared Camera Lifecycle Coordination
+
+### Problem
+
+As document capture and selfie/liveness became more interactive, camera control
+started happening from many places:
+
+- app lifecycle resume/pause
+- retry buttons
+- recapture flows
+- auto-capture timers
+- navigation pushes to the next step
+- back navigation out of the current step
+
+That made it easy to hit race conditions such as:
+
+- `startImageStream was called while a camera was streaming images`
+- dispose while a stream stop was still in flight
+- stream restarts after a route was already covered or popped
+- stale local `_isStreaming` flags drifting away from the real controller state
+
+### Fix
+
+The app now centralizes camera transition behavior in:
+
+- `lib/core/camera/camera_lifecycle_coordinator.dart`
+
+This coordinator is used by both:
+
+- `document_capture_step.dart`
+- `selfie_capture_step.dart`
+
+It provides:
+
+- queued start/stop/dispose transitions
+- controller-state-based stream synchronization
+- route-active tracking
+- disposed-state guards
+- best-effort error swallowing for teardown-only camera exceptions
+
+### Current Design Rules
+
+The coordinator exists so camera control follows a few explicit rules:
+
+- only one camera transition chain runs at a time per screen
+- the real controller state is treated as authoritative for stream status
+- a hidden or popped route must not continue live frame work
+- dispose should be idempotent
+- teardown errors should be logged, not crash the capture flow
+
+### Why it matters
+
+This is the current foundation for stable capture behavior and future SDK
+extraction.
+
+Without this shared layer, document and selfie steps can slowly diverge and
+re-introduce the same classes of camera bugs separately.
+
+## 9. PopScope and Route Exit Behavior
+
+### Problem
+
+Even after lifecycle fixes, a capture screen can still become inactive because
+of navigation, not because of app backgrounding:
+
+- user presses back
+- document pushes selfie
+- selfie pushes processing
+
+If camera work continues after that route is no longer the active surface, the
+screen may still:
+
+- process frames in the background
+- restart a stream unexpectedly
+- update state after the user already left that step
+
+### Fix
+
+Document and selfie screens now use `PopScope` to explicitly mark the route
+inactive and pause camera work when the user exits the step.
+
+They also mark the route inactive before pushing the next step and only restore
+route activity when returning to an interactive capture state.
+
+### Why it matters
+
+Flutter widget mounting alone is not enough to model “this route is the active
+camera owner right now.” Route-level coordination is part of the runtime
+stability story.
+
+## 10. Current Capture Route Behavior
+
+The KYC capture flow now intentionally behaves as follows:
+
+- document capture pauses live streaming before taking a picture
+- successful document capture marks the route inactive before pushing selfie
+- returning from selfie restores the document screen to its captured state
+- document recapture explicitly re-enters the live guidance/inference state
+- selfie capture pauses streaming before taking the final selfie
+- selfie marks its route inactive before pushing processing
+- back navigation from document or selfie pauses camera work immediately
+
+This is the behavior to preserve during future cleanup or SDK extraction unless
+product requirements change.
+
 ## Files Most Relevant To These Notes
 
+- `lib/core/camera/camera_lifecycle_coordinator.dart`
 - `lib/core/ml/document_quality_contract.dart`
 - `lib/core/ml/liveness_shadow_contract.dart`
 - `lib/core/ml/quality_isolate.dart`
