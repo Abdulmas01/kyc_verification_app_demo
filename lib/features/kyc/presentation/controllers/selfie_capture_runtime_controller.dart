@@ -4,6 +4,7 @@ class SelfieCaptureRuntimeController {
   bool _capturingSelfie = false;
   int _frameCounter = 0;
   int _analysisFailureCount = 0;
+  String? _lastFailureFeedbackKey;
 
   bool get isProcessingFrame => _isProcessingFrame;
   bool get isBlinkPrimed => _blinkPrimed;
@@ -16,6 +17,7 @@ class SelfieCaptureRuntimeController {
     _blinkPrimed = false;
     _capturingSelfie = false;
     _analysisFailureCount = 0;
+    _lastFailureFeedbackKey = null;
   }
 
   void resetProcessing() {
@@ -49,5 +51,17 @@ class SelfieCaptureRuntimeController {
 
   void resetAnalysisFailures() {
     _analysisFailureCount = 0;
+  }
+
+  bool shouldEmitFailureFeedback(String key) {
+    if (_lastFailureFeedbackKey == key) {
+      return false;
+    }
+    _lastFailureFeedbackKey = key;
+    return true;
+  }
+
+  void clearFailureFeedback() {
+    _lastFailureFeedbackKey = null;
   }
 }

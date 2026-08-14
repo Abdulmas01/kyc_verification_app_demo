@@ -17,8 +17,7 @@ class SelfieLivenessChallengeService {
         if (leftEyeOpen == null || rightEyeOpen == null) {
           return const SelfieLivenessDecision(
             type: SelfieLivenessDecisionType.waitForBetterLighting,
-            statusMessage: 'Keep your face well lit, then blink naturally.',
-            helperMessage: 'Make sure your eyes are fully visible.',
+            statusMessage: 'Face not clear enough.',
           );
         }
 
@@ -26,8 +25,7 @@ class SelfieLivenessChallengeService {
             rightEyeOpen > config.blinkOpenThreshold) {
           return const SelfieLivenessDecision(
             type: SelfieLivenessDecisionType.promptBlink,
-            statusMessage: 'Blink naturally to continue.',
-            helperMessage: 'We are waiting for one natural blink.',
+            statusMessage: 'Blink once.',
             primesBlink: true,
           );
         }
@@ -44,8 +42,7 @@ class SelfieLivenessChallengeService {
 
         return const SelfieLivenessDecision(
           type: SelfieLivenessDecisionType.promptBlink,
-          statusMessage: 'Blink naturally to continue.',
-          helperMessage: 'We are waiting for one natural blink.',
+          statusMessage: 'Blink once.',
         );
       case SelfieLivenessChallenge.turnLeft:
         final yAngle = face.headEulerAngleY ?? 0;
@@ -57,8 +54,7 @@ class SelfieLivenessChallengeService {
         }
         return const SelfieLivenessDecision(
           type: SelfieLivenessDecisionType.promptTurnLeft,
-          statusMessage: 'Slowly turn your head to the left.',
-          helperMessage: 'Move just enough so your face angle changes.',
+          statusMessage: 'Turn left.',
         );
       case SelfieLivenessChallenge.turnRight:
         final yAngle = face.headEulerAngleY ?? 0;
@@ -70,8 +66,7 @@ class SelfieLivenessChallengeService {
         }
         return const SelfieLivenessDecision(
           type: SelfieLivenessDecisionType.promptTurnRight,
-          statusMessage: 'Now turn your head to the right.',
-          helperMessage: 'Keep your face inside the oval while turning.',
+          statusMessage: 'Turn right.',
         );
       case SelfieLivenessChallenge.lookStraight:
         final yAngle = face.headEulerAngleY ?? 0;
@@ -83,8 +78,7 @@ class SelfieLivenessChallengeService {
         }
         return const SelfieLivenessDecision(
           type: SelfieLivenessDecisionType.promptLookStraight,
-          statusMessage: 'Look straight at the camera and hold still.',
-          helperMessage: 'We are capturing your final frame.',
+          statusMessage: 'Look straight.',
         );
       case SelfieLivenessChallenge.complete:
         return const SelfieLivenessDecision(

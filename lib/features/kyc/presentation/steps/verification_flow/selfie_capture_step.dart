@@ -315,15 +315,16 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
 
       if (faces.isEmpty) {
         _runtimeController.setBlinkPrimed(false);
+        _runtimeController.clearFailureFeedback();
         selfieCaptureUiNotifier.setFaceDetected(false);
         ref.read(thesisDebugReportProvider.notifier).recordSelfieFaceDetected(
               false,
             );
         selfieCaptureUiNotifier.setChallengeMessage(
-          'Center your face in the oval to continue.',
+          'Center your face.',
         );
         ref.read(thesisDebugReportProvider.notifier).recordSelfieStatus(
-              statusMessage: 'Center your face in the oval to continue.',
+              statusMessage: 'Center your face.',
             );
         return;
       }
@@ -333,18 +334,22 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
         ref.read(thesisDebugReportProvider.notifier).recordSelfieFaceDetected(
               false,
             );
+        if (_runtimeController.shouldEmitFailureFeedback('multiple_faces')) {
+          HapticFeedback.lightImpact();
+        }
         selfieCaptureUiNotifier.setError(
-          statusMessage: 'Only one face should be visible.',
-          errorMessage: 'Multiple faces detected. Please continue alone.',
+          statusMessage: 'Only one face allowed.',
+          errorMessage: 'Multiple faces detected.',
         );
         ref.read(thesisDebugReportProvider.notifier).recordSelfieStatus(
-              statusMessage: 'Only one face should be visible.',
-              errorMessage: 'Multiple faces detected. Please continue alone.',
+              statusMessage: 'Only one face allowed.',
+              errorMessage: 'Multiple faces detected.',
             );
         return;
       }
 
       final face = faces.first;
+      _runtimeController.clearFailureFeedback();
       selfieCaptureUiNotifier.setFaceDetected(true);
       ref.read(thesisDebugReportProvider.notifier).recordSelfieFaceDetected(
             true,
@@ -359,13 +364,16 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
         );
       }
       if (!mounted) return;
+      if (_runtimeController.shouldEmitFailureFeedback('analysis_failed')) {
+        HapticFeedback.lightImpact();
+      }
       selfieCaptureUiNotifier.setError(
-        statusMessage: 'We could not read your face clearly.',
-        errorMessage: 'Face analysis failed. Please try again.',
+        statusMessage: 'Face not clear enough.',
+        errorMessage: 'Face analysis failed.',
       );
       ref.read(thesisDebugReportProvider.notifier).recordSelfieStatus(
-            statusMessage: 'We could not read your face clearly.',
-            errorMessage: 'Face analysis failed. Please try again.',
+            statusMessage: 'Face not clear enough.',
+            errorMessage: 'Face analysis failed.',
           );
     } finally {
       _runtimeController.resetProcessing();
@@ -467,19 +475,19 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
 
       if (!mounted) return;
       if (faces.isEmpty) {
+        if (_runtimeController.shouldEmitFailureFeedback('capture_no_face')) {
+          HapticFeedback.lightImpact();
+        }
         selfieCaptureUiNotifier.requestRedo(
-          statusMessage: 'No face detected. Try again.',
-          errorMessage: 'No face detected. Try again.',
-          helperMessage:
-              'Bring your face back into the oval and redo the check.',
+          statusMessage: 'Face not found.',
+          errorMessage: 'Face not found.',
         );
         ref.read(thesisDebugReportProvider.notifier).recordSelfieStatus(
-              statusMessage: 'No face detected. Try again.',
-              errorMessage: 'No face detected. Try again.',
+              statusMessage: 'Face not found.',
+              errorMessage: 'Face not found.',
               incrementRedo: true,
             );
-        HapticFeedback.lightImpact();
-        ToastUtil.showErrorToast('No face detected. Try again.');
+        ToastUtil.showErrorToast('Face not found.');
         await _startImageStream();
         return;
       }
@@ -505,18 +513,19 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
       _cameraLifecycle.markRouteActive(true);
     } catch (e) {
       if (!mounted) return;
+      if (_runtimeController.shouldEmitFailureFeedback('capture_failed')) {
+        HapticFeedback.lightImpact();
+      }
       selfieCaptureUiNotifier.requestRedo(
-        statusMessage: 'Capture failed. Please try again.',
-        errorMessage: 'Selfie capture failed. Try again.',
-        helperMessage: 'Redo the liveness check and keep the phone steady.',
+        statusMessage: 'Capture failed.',
+        errorMessage: 'Capture failed.',
       );
       ref.read(thesisDebugReportProvider.notifier).recordSelfieStatus(
-            statusMessage: 'Capture failed. Please try again.',
-            errorMessage: 'Selfie capture failed. Try again.',
+            statusMessage: 'Capture failed.',
+            errorMessage: 'Capture failed.',
             incrementRedo: true,
           );
-      HapticFeedback.lightImpact();
-      ToastUtil.showErrorToast('Selfie capture failed. Try again.');
+      ToastUtil.showErrorToast('Capture failed.');
       await _startImageStreamInternal();
     } finally {
       _runtimeController.setCapturingSelfie(false);
@@ -561,18 +570,19 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
         if (!mounted || _runtimeController.isCapturingSelfie) return;
         final uiState = ref.read(selfieCaptureUiProvider);
         if (uiState.isChallengeComplete || uiState.shouldRedo) return;
+        if (_runtimeController.shouldEmitFailureFeedback('timeout')) {
+          HapticFeedback.lightImpact();
+        }
         ref.read(selfieCaptureUiProvider.notifier).requestRedo(
-              statusMessage: 'Liveness step timed out.',
-              errorMessage: 'We could not confirm that step in time.',
-              helperMessage: 'Tap redo and try the liveness check again.',
+              statusMessage: 'Timed out.',
+              errorMessage: 'Timed out.',
             );
         ref.read(thesisDebugReportProvider.notifier).recordSelfieStatus(
-              statusMessage: 'Liveness step timed out.',
-              errorMessage: 'We could not confirm that step in time.',
+              statusMessage: 'Timed out.',
+              errorMessage: 'Timed out.',
               incrementRedo: true,
               incrementTimeout: true,
             );
-        HapticFeedback.lightImpact();
         unawaited(_stopImageStream());
       },
     );
@@ -599,13 +609,8 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Follow the prompts',
+                'Selfie check',
                 style: context.textTheme.headlineSmall,
-              ),
-              const SizedBox(height: AppSpacing.s8),
-              Text(
-                'We’ll ask you to blink and turn your head to confirm liveness.',
-                style: context.textTheme.bodyMedium,
               ),
               const SizedBox(height: AppSpacing.s16),
               _ChallengeProgressCard(uiState: uiState),
@@ -662,34 +667,34 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
                   ),
                 ),
               ),
-              const SizedBox(height: AppSpacing.s16),
-              SizedBox(
-                width: double.infinity,
-                child: ButtonWidget(
-                  text: uiState.isAutoCapturing
-                      ? 'Capturing...'
-                      : (uiState.isPermissionDenied ||
-                              uiState.cameraErrorMessage != null)
-                          ? 'Retry camera'
-                          : uiState.shouldRedo
-                              ? 'Redo liveness check'
-                              : 'Restart liveness check',
-                  enabled: !uiState.isAutoCapturing,
-                  onTap: uiState.isPermissionDenied ||
-                          uiState.cameraErrorMessage != null
-                      ? _retryCameraSetup
-                      : () {
-                          ref
-                              .read(selfieCaptureUiProvider.notifier)
-                              .resetFlow();
-                          _runtimeController.resetFlow();
-                          _scheduleChallengeTimeout();
-                          _cameraLifecycle.markRouteActive(true);
-                          unawaited(_startImageStream());
-                          HapticFeedback.selectionClick();
-                        },
+              if (uiState.isPermissionDenied ||
+                  uiState.cameraErrorMessage != null ||
+                  uiState.shouldRedo) ...[
+                const SizedBox(height: AppSpacing.s16),
+                SizedBox(
+                  width: double.infinity,
+                  child: ButtonWidget(
+                    text: (uiState.isPermissionDenied ||
+                            uiState.cameraErrorMessage != null)
+                        ? 'Retry camera'
+                        : 'Try again',
+                    enabled: !uiState.isAutoCapturing,
+                    onTap: uiState.isPermissionDenied ||
+                            uiState.cameraErrorMessage != null
+                        ? _retryCameraSetup
+                        : () {
+                            ref
+                                .read(selfieCaptureUiProvider.notifier)
+                                .resetFlow();
+                            _runtimeController.resetFlow();
+                            _scheduleChallengeTimeout();
+                            _cameraLifecycle.markRouteActive(true);
+                            unawaited(_startImageStream());
+                            HapticFeedback.selectionClick();
+                          },
+                  ),
                 ),
-              ),
+              ],
             ],
           ),
         ),
@@ -785,15 +790,6 @@ class _ChallengeStatusBanner extends StatelessWidget {
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-                if (uiState.helperMessage != null) ...[
-                  const SizedBox(height: AppSpacing.s4),
-                  Text(
-                    uiState.helperMessage!,
-                    style: context.textTheme.bodySmall?.copyWith(
-                      color: foreground,
-                    ),
-                  ),
-                ],
               ],
             ),
           ),
