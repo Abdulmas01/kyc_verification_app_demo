@@ -1,28 +1,14 @@
 import 'package:kyc_verification_app_demo/core/ml/liveness_shadow_model.dart';
 
+import '../../domain/enums/liveness_mode.dart';
+import '../../domain/enums/liveness_reason_code.dart';
+import '../../domain/models/liveness_evaluation_result.dart';
 import '../../domain/models/mobile_liveness_shadow_request.dart';
-
-class MobileLivenessShadowResult {
-  const MobileLivenessShadowResult.success({
-    required this.score,
-    required this.latencyMs,
-  }) : errorMessage = null;
-
-  const MobileLivenessShadowResult.unavailable(this.errorMessage)
-      : score = null,
-        latencyMs = null;
-
-  final double? score;
-  final double? latencyMs;
-  final String? errorMessage;
-
-  bool get isAvailable => score != null && latencyMs != null;
-}
 
 class MobileLivenessShadowService {
   const MobileLivenessShadowService();
 
-  Future<MobileLivenessShadowResult?> run(
+  Future<LivenessEvaluationResult?> run(
     MobileLivenessShadowRequest request,
   ) async {
     final selfiePath = request.selfiePath;
@@ -34,20 +20,36 @@ class MobileLivenessShadowService {
     try {
       final prediction = await LivenessShadowModel.predictFromFile(selfiePath);
       if (prediction == null) {
-        return const MobileLivenessShadowResult.unavailable(
-          'Shadow liveness asset is missing or could not be loaded.',
+        return LivenessEvaluationResult.runtimeFailed(
+          mode: LivenessMode.shadow,
+          reasonCode: LivenessReasonCode.modelUnavailable,
+          metadata: {
+            'message':
+                'Shadow liveness asset is missing or could not be loaded.',
+          },
         );
       }
 
-      return MobileLivenessShadowResult.success(
+      return LivenessEvaluationResult.needsBackendReview(
+        mode: LivenessMode.shadow,
+        reasonCode: LivenessReasonCode.needsBackendReview,
         score: prediction.liveScore,
         latencyMs: prediction.latencyMs,
+        metadata: const {
+          'source': 'mobile_shadow_model',
+        },
       );
     } catch (error) {
       if (!config.failOpen) {
         rethrow;
       }
-      return MobileLivenessShadowResult.unavailable(error.toString());
+      return LivenessEvaluationResult.runtimeFailed(
+        mode: LivenessMode.shadow,
+        reasonCode: LivenessReasonCode.runtimeFailed,
+        metadata: {
+          'message': error.toString(),
+        },
+      );
     }
   }
 }

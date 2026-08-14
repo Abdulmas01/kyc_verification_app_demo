@@ -170,6 +170,7 @@ class SelfieCaptureUiNotifier
   }) {
     state = state.copyWith(
       isDetecting: false,
+      isFaceDetected: false,
       isAutoCapturing: false,
       statusMessage: statusMessage,
       helperMessage: helperMessage,

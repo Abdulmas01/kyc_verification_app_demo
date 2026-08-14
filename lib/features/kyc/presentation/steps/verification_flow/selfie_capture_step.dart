@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:camera/camera.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
@@ -90,6 +91,10 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
     _initializeFuture = Future.value();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
+      logPrint(
+        'Mobile liveness model: '
+        '${widget.effectiveLivenessConfig.mobileShadow.enabled ? 'ON' : 'OFF'}',
+      );
       ref.read(thesisDebugReportProvider.notifier).attachSelfieConfig(
             _selfieConfigToJson(widget.effectiveLivenessConfig),
           );
@@ -478,6 +483,7 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
         if (_runtimeController.shouldEmitFailureFeedback('capture_no_face')) {
           HapticFeedback.lightImpact();
         }
+        selfieCaptureUiNotifier.setFaceDetected(false);
         selfieCaptureUiNotifier.requestRedo(
           statusMessage: 'Face not found.',
           errorMessage: 'Face not found.',
@@ -516,6 +522,7 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
       if (_runtimeController.shouldEmitFailureFeedback('capture_failed')) {
         HapticFeedback.lightImpact();
       }
+      selfieCaptureUiNotifier.setFaceDetected(false);
       selfieCaptureUiNotifier.requestRedo(
         statusMessage: 'Capture failed.',
         errorMessage: 'Capture failed.',
@@ -546,7 +553,13 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
       return;
     }
 
-    if (result.isAvailable) {
+    if (!result.isRuntimeProblem &&
+        result.score != null &&
+        result.latencyMs != null) {
+      logPrint(
+        'Mobile liveness model ran successfully '
+        '(status=${result.status.name}, score=${result.score!.toStringAsFixed(4)}, latency=${result.latencyMs!.toStringAsFixed(1)}ms).',
+      );
       ref
           .read(thesisDebugReportProvider.notifier)
           .recordMobileLivenessShadowSuccess(
@@ -556,10 +569,16 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
       return;
     }
 
+    logPrint(
+      'Mobile liveness model unavailable: '
+      '${result.reasonCode.name} '
+      '${(result.metadata['message'] ?? 'Unknown').toString()}',
+    );
     ref
         .read(thesisDebugReportProvider.notifier)
         .recordMobileLivenessShadowUnavailable(
-            result.errorMessage ?? 'Unknown');
+          (result.metadata['message'] ?? result.reasonCode.name).toString(),
+        );
   }
 
   void _scheduleChallengeTimeout() {
@@ -621,6 +640,38 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
                 _ErrorBanner(message: uiState.errorMessage ?? ''),
               ],
               const SizedBox(height: AppSpacing.s16),
+              if (kDebugMode) ...[
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Container(
+                    margin: const EdgeInsets.only(bottom: AppSpacing.s12),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.s12,
+                      vertical: AppSpacing.s8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: widget.effectiveLivenessConfig.mobileShadow.enabled
+                          ? Theme.of(context).colorScheme.primaryContainer
+                          : Theme.of(context)
+                              .colorScheme
+                              .surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      widget.effectiveLivenessConfig.mobileShadow.enabled
+                          ? 'Debug: mobile liveness model ON'
+                          : 'Debug: mobile liveness model OFF',
+                      style: context.textTheme.bodySmall?.copyWith(
+                        color: widget
+                                .effectiveLivenessConfig.mobileShadow.enabled
+                            ? Theme.of(context).colorScheme.onPrimaryContainer
+                            : Theme.of(context).colorScheme.onSurfaceVariant,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
               Expanded(
                 child: Center(
                   child: ConstrainedBox(
@@ -686,6 +737,9 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
                             ref
                                 .read(selfieCaptureUiProvider.notifier)
                                 .resetFlow();
+                            ref
+                                .read(selfieCaptureUiProvider.notifier)
+                                .setFaceDetected(false);
                             _runtimeController.resetFlow();
                             _scheduleChallengeTimeout();
                             _cameraLifecycle.markRouteActive(true);

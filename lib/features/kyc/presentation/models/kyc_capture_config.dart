@@ -119,7 +119,7 @@ class SelfieLivenessConfig {
         blinkOpenThreshold = 0.7,
         headTurnThreshold = 18,
         lookStraightThreshold = 8,
-        mobileShadow = const MobileLivenessShadowConfig.disabled();
+        mobileShadow = const MobileLivenessShadowConfig.enabledShadow();
 
   const SelfieLivenessConfig.fast()
       : resolutionPreset = ResolutionPreset.medium,
@@ -131,7 +131,7 @@ class SelfieLivenessConfig {
         blinkOpenThreshold = 0.68,
         headTurnThreshold = 16,
         lookStraightThreshold = 10,
-        mobileShadow = const MobileLivenessShadowConfig.disabled();
+        mobileShadow = const MobileLivenessShadowConfig.enabledShadow();
 
   const SelfieLivenessConfig.highQuality()
       : resolutionPreset = ResolutionPreset.veryHigh,
@@ -143,7 +143,7 @@ class SelfieLivenessConfig {
         blinkOpenThreshold = 0.72,
         headTurnThreshold = 20,
         lookStraightThreshold = 7,
-        mobileShadow = const MobileLivenessShadowConfig.disabled();
+        mobileShadow = const MobileLivenessShadowConfig.enabledShadow();
 }
 
 class MobileLivenessShadowConfig {
