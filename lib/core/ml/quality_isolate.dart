@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:isolate';
-
 import 'package:camera/camera.dart';
 import 'package:flutter/services.dart';
 import 'package:image/image.dart' as img;
@@ -11,6 +10,34 @@ import '../utils/app_assets.dart';
 import 'document_quality_contract.dart';
 import 'model_contract_types.dart';
 
+class QualityDebugArtifacts {
+  const QualityDebugArtifacts({
+    required this.fullFrameJpeg,
+    required this.modelInputJpeg,
+    required this.frameWidth,
+    required this.frameHeight,
+    required this.modelWidth,
+    required this.modelHeight,
+  });
+
+  final Uint8List fullFrameJpeg;
+  final Uint8List modelInputJpeg;
+  final int frameWidth;
+  final int frameHeight;
+  final int modelWidth;
+  final int modelHeight;
+}
+
+class QualityInferenceResult {
+  const QualityInferenceResult({
+    required this.probabilities,
+    this.debugArtifacts,
+  });
+
+  final List<double> probabilities;
+  final QualityDebugArtifacts? debugArtifacts;
+}
+
 class QualityIsolate {
   QualityIsolate({required this.assetPath});
 
@@ -19,7 +46,7 @@ class QualityIsolate {
   SendPort? _sendPort;
   Isolate? _isolate;
   int _nextId = 0;
-  final Map<int, Completer<List<double>>> _pending = {};
+  final Map<int, Completer<QualityInferenceResult>> _pending = {};
   Future<void>? _startFuture;
 
   Future<void> start() async {
@@ -53,9 +80,15 @@ class QualityIsolate {
         }
         final id = message['id'] as int?;
         final probs = message['probs'] as List<double>?;
+        final debug = message['debug'] as Map?;
         final error = message['error'] as String?;
         if (id != null && probs != null) {
-          _pending.remove(id)?.complete(probs);
+          _pending.remove(id)?.complete(
+                QualityInferenceResult(
+                  probabilities: probs,
+                  debugArtifacts: _readDebugArtifacts(debug),
+                ),
+              );
           return;
         }
         if (id != null && error != null) {
@@ -93,26 +126,36 @@ class QualityIsolate {
     completer.complete();
   }
 
-  Future<List<double>?> predict(CameraImage image) async {
+  Future<QualityInferenceResult?> predict(
+    CameraImage image, {
+    bool includeDebugArtifacts = false,
+  }) async {
     final payload = _FramePayload.fromCameraImage(image);
-    return predictPayload(payload.toMap());
+    return predictPayload(
+      payload.toMap(),
+      includeDebugArtifacts: includeDebugArtifacts,
+    );
   }
 
   Map<String, Object?> buildPayload(CameraImage image) {
     return _FramePayload.fromCameraImage(image).toMap();
   }
 
-  Future<List<double>?> predictPayload(Map<String, Object?> payload) async {
+  Future<QualityInferenceResult?> predictPayload(
+    Map<String, Object?> payload, {
+    bool includeDebugArtifacts = false,
+  }) async {
     if (_sendPort == null) {
       throw StateError('QualityIsolate not started');
     }
     final id = _nextId++;
-    final completer = Completer<List<double>>();
+    final completer = Completer<QualityInferenceResult>();
     _pending[id] = completer;
 
     _sendPort!.send({
       'id': id,
       'payload': payload,
+      'includeDebug': includeDebugArtifacts,
     });
     return completer.future.timeout(
       const Duration(seconds: 3),
@@ -135,6 +178,24 @@ class QualityIsolate {
     _isolate = null;
     _sendPort = null;
     _startFuture = null;
+  }
+
+  QualityDebugArtifacts? _readDebugArtifacts(Map? debug) {
+    if (debug == null) return null;
+    final fullFrame = debug['fullFrameJpg'];
+    final modelInput = debug['modelInputJpg'];
+    if (fullFrame is! TransferableTypedData ||
+        modelInput is! TransferableTypedData) {
+      return null;
+    }
+    return QualityDebugArtifacts(
+      fullFrameJpeg: fullFrame.materialize().asUint8List(),
+      modelInputJpeg: modelInput.materialize().asUint8List(),
+      frameWidth: debug['frameWidth'] as int? ?? 0,
+      frameHeight: debug['frameHeight'] as int? ?? 0,
+      modelWidth: debug['modelWidth'] as int? ?? 0,
+      modelHeight: debug['modelHeight'] as int? ?? 0,
+    );
   }
 }
 
@@ -260,6 +321,7 @@ Future<void> _entry(_IsolateConfig config) async {
     if (message is! Map) return;
     final id = message['id'] as int?;
     final payloadMap = message['payload'];
+    final includeDebug = message['includeDebug'] == true;
     if (id == null || payloadMap is! Map) return;
 
     try {
@@ -302,7 +364,23 @@ Future<void> _entry(_IsolateConfig config) async {
       interpreter.run(input, output);
       final probs = _flattenOutput(output);
 
-      config.sendPort.send({'id': id, 'probs': probs});
+      config.sendPort.send({
+        'id': id,
+        'probs': probs,
+        if (includeDebug)
+          'debug': {
+            'fullFrameJpg': TransferableTypedData.fromList([
+              Uint8List.fromList(img.encodeJpg(image, quality: 90)),
+            ]),
+            'modelInputJpg': TransferableTypedData.fromList([
+              Uint8List.fromList(img.encodeJpg(resized, quality: 90)),
+            ]),
+            'frameWidth': image.width,
+            'frameHeight': image.height,
+            'modelWidth': inputWidth,
+            'modelHeight': inputHeight,
+          },
+      });
     } catch (e) {
       config.sendPort.send({'id': id, 'error': e.toString()});
     }

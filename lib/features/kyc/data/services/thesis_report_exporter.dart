@@ -12,12 +12,14 @@ class ThesisReportExportResult {
     required this.directoryPath,
     required this.reportMarkdownPath,
     required this.reportJsonPath,
+    required this.shareableFilePaths,
     required this.summaryText,
   });
 
   final String directoryPath;
   final String reportMarkdownPath;
   final String reportJsonPath;
+  final List<String> shareableFilePaths;
   final String summaryText;
 }
 
@@ -79,10 +81,19 @@ class ThesisReportExporter {
     );
     await File(markdownPath).writeAsString(summaryText);
 
+    final shareableFilePaths = <String>[
+      markdownPath,
+      jsonPath,
+      if (copiedDocumentPath != null) copiedDocumentPath,
+      if (copiedSelfiePath != null) copiedSelfiePath,
+      if (report.result != null) backendPayloadPath,
+    ];
+
     return ThesisReportExportResult(
       directoryPath: exportDirectory.path,
       reportMarkdownPath: markdownPath,
       reportJsonPath: jsonPath,
+      shareableFilePaths: shareableFilePaths,
       summaryText: summaryText,
     );
   }

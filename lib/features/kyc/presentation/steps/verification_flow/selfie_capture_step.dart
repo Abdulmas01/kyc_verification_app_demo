@@ -20,6 +20,7 @@ import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart'
 import 'package:kyc_verification_app_demo/core/extension/context_extention.dart';
 import 'package:kyc_verification_app_demo/core/ml/liveness_shadow_model.dart';
 import 'package:kyc_verification_app_demo/core/theme/app_spacing.dart';
+import 'package:kyc_verification_app_demo/core/utils/logger.dart';
 import 'package:kyc_verification_app_demo/core/utils/toast_utils.dart';
 import 'package:kyc_verification_app_demo/core/widget/button_widget.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -64,6 +65,7 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
   bool _capturingSelfie = false;
   int _frameCounter = 0;
   Timer? _challengeTimeoutTimer;
+  Future<void>? _controllerDisposeFuture;
 
   late final FaceDetector _faceDetector;
 
@@ -110,14 +112,39 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
   }
 
   Future<void> _disposeController() async {
+    final existing = _controllerDisposeFuture;
+    if (existing != null) return existing;
+    late final Future<void> future;
+    future = _disposeControllerInternal().whenComplete(() {
+      if (identical(_controllerDisposeFuture, future)) {
+        _controllerDisposeFuture = null;
+      }
+    });
+    _controllerDisposeFuture = future;
+    return future;
+  }
+
+  Future<void> _disposeControllerInternal() async {
     final controller = _controller;
     _controller = null;
     _isStreaming = false;
     if (controller == null) return;
-    if (controller.value.isStreamingImages) {
-      await controller.stopImageStream();
+    try {
+      if (controller.value.isStreamingImages) {
+        await controller.stopImageStream();
+      }
+    } on CameraException catch (error) {
+      logPrint('Selfie camera stop stream ignored during dispose: ${error.code}');
+    } catch (_) {
+      logPrint('Selfie camera stop stream ignored during dispose.');
     }
-    await controller.dispose();
+    try {
+      await controller.dispose();
+    } on CameraException catch (error) {
+      logPrint('Selfie camera dispose ignored: ${error.code}');
+    } catch (_) {
+      logPrint('Selfie camera dispose ignored.');
+    }
   }
 
   Future<void> _initCamera() async {
@@ -198,7 +225,6 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _challengeTimeoutTimer?.cancel();
-    unawaited(_stopImageStream());
     unawaited(_disposeController());
     _faceDetector.close();
     super.dispose();
@@ -750,12 +776,10 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
     _blinkPrimed = false;
     _capturingSelfie = false;
     _challengeTimeoutTimer?.cancel();
-    await _stopImageStream();
-    await _controller?.dispose();
+    await _disposeController();
     if (!mounted) return;
     setState(() {
-      _controller = null;
-      _initializeFuture = _initCamera();
+      _initializeFuture = _ensureCameraInitialized();
     });
   }
 

@@ -93,6 +93,9 @@ class _ResultScreenState extends ConsumerState<ResultScreen> {
                         onShare: latestExport == null
                             ? null
                             : () => _shareSummary(latestExport.summaryText),
+                        onShareFiles: latestExport == null
+                            ? null
+                            : () => _shareExportFiles(latestExport),
                         onCopyPath: latestExport == null
                             ? null
                             : () => _copyExportPath(latestExport.directoryPath),
@@ -184,6 +187,23 @@ class _ResultScreenState extends ConsumerState<ResultScreen> {
         builder: (_) => _ThesisReportSummaryScreen(summaryText: summaryText),
       ),
     );
+  }
+
+  Future<void> _shareExportFiles(ThesisReportExportResult export) async {
+    try {
+      await DebugShareChannel.shareFiles(
+        subject: 'KYC Thesis Report Bundle',
+        text: 'Structured thesis report bundle exported from the debug build.',
+        filePaths: export.shareableFilePaths,
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('File sharing is not available on this device.'),
+        ),
+      );
+    }
   }
 }
 
@@ -294,6 +314,7 @@ class _DebugExportCard extends StatelessWidget {
     required this.onExport,
     required this.onViewSummary,
     required this.onShare,
+    required this.onShareFiles,
     required this.onCopyPath,
   });
 
@@ -302,6 +323,7 @@ class _DebugExportCard extends StatelessWidget {
   final Future<void> Function() onExport;
   final VoidCallback? onViewSummary;
   final VoidCallback? onShare;
+  final VoidCallback? onShareFiles;
   final VoidCallback? onCopyPath;
 
   @override
@@ -360,6 +382,13 @@ class _DebugExportCard extends StatelessWidget {
           const SizedBox(height: AppSpacing.s8),
           Row(
             children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: onShareFiles,
+                  child: const Text('Share files'),
+                ),
+              ),
+              const SizedBox(width: AppSpacing.s8),
               Expanded(
                 child: OutlinedButton(
                   onPressed: onCopyPath,

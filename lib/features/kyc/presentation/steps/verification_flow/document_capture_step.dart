@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:camera/camera.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_mlkit_object_detection/google_mlkit_object_detection.dart';
@@ -17,6 +18,7 @@ import 'package:kyc_verification_app_demo/core/utils/app_assets.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../../../domain/models/kyc_capture_bundle.dart';
+import '../../../data/services/document_quality_debug_exporter.dart';
 import '../../controllers/document_capture_ui_notifier.dart';
 import '../../controllers/thesis_debug_report_notifier.dart';
 import '../../models/kyc_capture_config.dart';
@@ -63,6 +65,9 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
   DocumentQuality? _lastLoggedRawQuality;
   DocumentQuality? _lastLoggedGuidanceQuality;
   bool _lastGuidanceHoldLogged = false;
+  bool _pendingDebugSampleExport = false;
+  bool _isNavigatingToSelfie = false;
+  Future<void>? _controllerDisposeFuture;
 
   static const double _strongNegativeGuidanceThreshold = 0.50;
   static const double _strongNegativeImmediateThreshold = 0.65;
@@ -113,14 +118,39 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
   }
 
   Future<void> _disposeController() async {
+    final existing = _controllerDisposeFuture;
+    if (existing != null) return existing;
+    late final Future<void> future;
+    future = _disposeControllerInternal().whenComplete(() {
+      if (identical(_controllerDisposeFuture, future)) {
+        _controllerDisposeFuture = null;
+      }
+    });
+    _controllerDisposeFuture = future;
+    return future;
+  }
+
+  Future<void> _disposeControllerInternal() async {
     final controller = _controller;
     _controller = null;
     _isStreaming = false;
     if (controller == null) return;
-    if (controller.value.isStreamingImages) {
-      await controller.stopImageStream();
+    try {
+      if (controller.value.isStreamingImages) {
+        await controller.stopImageStream();
+      }
+    } on CameraException catch (error) {
+      logPrint('Document camera stop stream ignored during dispose: ${error.code}');
+    } catch (_) {
+      logPrint('Document camera stop stream ignored during dispose.');
     }
-    await controller.dispose();
+    try {
+      await controller.dispose();
+    } on CameraException catch (error) {
+      logPrint('Document camera dispose ignored: ${error.code}');
+    } catch (_) {
+      logPrint('Document camera dispose ignored.');
+    }
   }
 
   Future<void> _initCamera() async {
@@ -269,10 +299,15 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
   Future<void> _processPayload(Map<String, Object?> payload) async {
     final stopwatch = Stopwatch()..start();
     try {
-      final probs = await _qualityIsolate?.predictPayload(payload);
+      if (!_shouldProcessLiveQualityFrames) return;
+      final inference = await _qualityIsolate?.predictPayload(
+        payload,
+        includeDebugArtifacts: _pendingDebugSampleExport,
+      );
       if (!mounted) return;
-      if (probs == null) return;
-      final quality = QualityModel.fromProbabilities(probs);
+      if (!_shouldProcessLiveQualityFrames) return;
+      if (inference == null) return;
+      final quality = QualityModel.fromProbabilities(inference.probabilities);
       final guidanceQuality = _resolveGuidanceQuality(quality);
       final guidanceMessage = _messageForQuality(guidanceQuality);
       _logQualityTransition(
@@ -304,6 +339,13 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
         quality: quality,
         allowsQualityAcceptance: allowsQualityAcceptance,
       );
+      await _maybeExportDebugSample(
+        inference: inference,
+        quality: quality,
+        guidanceQuality: guidanceQuality,
+        guidanceMessage: guidanceMessage,
+        inferenceMs: stopwatch.elapsedMicroseconds / 1000,
+      );
       _recordInference(
         stopwatch.elapsedMicroseconds / 1000,
         quality: quality,
@@ -315,6 +357,42 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
     } finally {
       _isProcessingFrame = false;
     }
+  }
+
+  Future<void> _maybeExportDebugSample({
+    required QualityInferenceResult inference,
+    required QualityResult quality,
+    required DocumentQuality guidanceQuality,
+    required String guidanceMessage,
+    required double inferenceMs,
+  }) async {
+    if (!_pendingDebugSampleExport) return;
+    _pendingDebugSampleExport = false;
+    final debugArtifacts = inference.debugArtifacts;
+    if (debugArtifacts == null) return;
+
+    final runId = ref.read(thesisDebugReportProvider).runId;
+    final exportResult = await ref
+        .read(documentQualityDebugExporterProvider)
+        .exportLiveSample(
+          runId: runId,
+          quality: quality,
+          displayedGuidance: guidanceQuality,
+          guidanceMessage: guidanceMessage,
+          inferenceMs: inferenceMs,
+          frameNumber: _frameCounter,
+          frameStride: _frameStride,
+          documentConfig: _documentConfigToJson(widget.effectiveCaptureConfig),
+          debugArtifacts: debugArtifacts,
+        );
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'Quality sample exported to ${exportResult.directoryPath}',
+        ),
+      ),
+    );
   }
 
   DocumentQuality _resolveGuidanceQuality(QualityResult quality) {
@@ -587,15 +665,20 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
           );
       HapticFeedback.mediumImpact();
 
-      Navigator.of(context).push(
+      _isNavigatingToSelfie = true;
+      await Navigator.of(context).push(
         MaterialPageRoute(
           builder: (_) => SelfieCaptureStep(
             captureBundle: KycCaptureBundle(documentPath: normalized.path),
           ),
         ),
       );
+      if (!mounted) return;
+      _isNavigatingToSelfie = false;
+      await _resumeCameraAfterReturn();
     } catch (e) {
       if (!mounted) return;
+      _isNavigatingToSelfie = false;
       notifier.setError('Capture failed. Please try again.');
       ref
           .read(thesisDebugReportProvider.notifier)
@@ -604,7 +687,10 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
     } finally {
       if (mounted) {
         notifier.setDetecting(false);
-        if (_controller != null && !_isStreaming) {
+        if (_controller != null &&
+            !_isStreaming &&
+            !_isNavigatingToSelfie &&
+            !_controller!.value.isTakingPicture) {
           await _startImageStream();
         }
       }
@@ -710,6 +796,27 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
                     : _captureAndDetect,
               ),
             ),
+            if (kDebugMode) ...[
+              const SizedBox(height: AppSpacing.s8),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton(
+                  onPressed: () {
+                    setState(() {
+                      _pendingDebugSampleExport = true;
+                    });
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                          'Next live quality inference will be exported.',
+                        ),
+                      ),
+                    );
+                  },
+                  child: const Text('Export Live Quality Sample'),
+                ),
+              ),
+            ],
             if (uiState.isAutoCapturing) ...[
               const SizedBox(height: AppSpacing.s8),
               Text(
@@ -761,6 +868,26 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
     setState(() {
       _initializeFuture = _ensureCameraInitialized();
     });
+  }
+
+  Future<void> _resumeCameraAfterReturn() async {
+    _autoCaptureTimer?.cancel();
+    _isProcessingFrame = false;
+    _pendingGuidanceQuality = null;
+    _pendingGuidanceCount = 0;
+    _activeGuidanceQuality = null;
+    _lastGuidanceTransitionAt = Duration.zero;
+    _lastGuidanceMessage = null;
+    _lastLoggedRawQuality = null;
+    _lastLoggedGuidanceQuality = null;
+    _lastGuidanceHoldLogged = false;
+    ref.read(documentCaptureUiProvider.notifier)
+      ..setStatus('Place your ID fully inside the frame.')
+      ..setDocumentDetected(false)
+      ..setAutoCapturing(false)
+      ..setDetecting(false)
+      ..clearError();
+    await _resumeCamera();
   }
 
   Map<String, dynamic> _documentConfigToJson(DocumentCaptureConfig config) {
@@ -816,6 +943,18 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
     final seconds = totalMs ~/ 1000;
     final millis = totalMs % 1000;
     return '$seconds.${(millis ~/ 10).toString().padLeft(2, '0')}s';
+  }
+
+  bool get _shouldProcessLiveQualityFrames {
+    if (!mounted) return false;
+    if (_isNavigatingToSelfie) return false;
+    if (!_isStreaming) return false;
+    final controller = _controller;
+    if (controller == null || !controller.value.isInitialized) return false;
+    if (controller.value.isTakingPicture) return false;
+    final uiState = ref.read(documentCaptureUiProvider);
+    if (uiState.isDetecting) return false;
+    return true;
   }
 }
 

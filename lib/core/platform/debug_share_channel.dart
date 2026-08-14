@@ -12,4 +12,16 @@ class DebugShareChannel {
       'text': text,
     });
   }
+
+  static Future<void> shareFiles({
+    required String subject,
+    required List<String> filePaths,
+    String? text,
+  }) async {
+    await _channel.invokeMethod<void>('shareFiles', {
+      'subject': subject,
+      'text': text,
+      'paths': filePaths,
+    });
+  }
 }
