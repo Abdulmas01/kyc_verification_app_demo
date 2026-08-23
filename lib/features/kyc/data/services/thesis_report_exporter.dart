@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 
+import '../../../../core/platform/debug_export_channel.dart';
 import '../../presentation/models/thesis_debug_report.dart';
 
 class ThesisReportExportResult {
@@ -26,14 +27,14 @@ class ThesisReportExportResult {
 class ThesisReportExporter {
   Future<ThesisReportExportResult> export(ThesisDebugReport report) async {
     final documentsDirectory = await getApplicationDocumentsDirectory();
-    final exportDirectory = Directory(
+    final localExportDirectory = Directory(
       '${documentsDirectory.path}/kyc_thesis_reports/${report.runId}',
     );
     final capturesDirectory = Directory(
-      '${exportDirectory.path}/supporting/captures',
+      '${localExportDirectory.path}/supporting/captures',
     );
     final backendDirectory = Directory(
-      '${exportDirectory.path}/supporting/backend',
+      '${localExportDirectory.path}/supporting/backend',
     );
 
     await capturesDirectory.create(recursive: true);
@@ -73,12 +74,28 @@ class ThesisReportExporter {
       },
     };
 
-    final jsonPath = '${exportDirectory.path}/report.json';
-    final markdownPath = '${exportDirectory.path}/report.md';
+    final jsonPath = '${localExportDirectory.path}/report.json';
+    final markdownPath = '${localExportDirectory.path}/report.md';
+
+    final shareableFilePaths = <String>[
+      if (copiedDocumentPath != null) copiedDocumentPath,
+      if (copiedSelfiePath != null) copiedSelfiePath,
+      if (copiedDocumentPortraitPath != null) copiedDocumentPortraitPath,
+      if (report.result != null) backendPayloadPath,
+    ];
+
+    final downloadExport = await _exportToDownloadsIfSupported(
+      runId: report.runId,
+      localFilePaths: shareableFilePaths,
+    );
+    final finalDirectoryPath = downloadExport?.directoryPath.isNotEmpty == true
+        ? downloadExport!.directoryPath
+        : localExportDirectory.path;
+
     final summaryText =
-        _buildSummary(report, exportDirectory.path, supportingFiles);
+        _buildSummary(report, finalDirectoryPath, supportingFiles);
     final jsonBody = report.toJson(
-      exportDirectoryPath: exportDirectory.path,
+      exportDirectoryPath: finalDirectoryPath,
       supportingFiles: supportingFiles,
     );
 
@@ -87,21 +104,28 @@ class ThesisReportExporter {
     );
     await File(markdownPath).writeAsString(summaryText);
 
-    final shareableFilePaths = <String>[
+    final shareableFilesWithReport = <String>[
       markdownPath,
       jsonPath,
-      if (copiedDocumentPath != null) copiedDocumentPath,
-      if (copiedSelfiePath != null) copiedSelfiePath,
-      if (copiedDocumentPortraitPath != null) copiedDocumentPortraitPath,
-      if (report.result != null) backendPayloadPath,
+      ...shareableFilePaths,
     ];
 
     return ThesisReportExportResult(
-      directoryPath: exportDirectory.path,
+      directoryPath: finalDirectoryPath,
       reportMarkdownPath: markdownPath,
       reportJsonPath: jsonPath,
-      shareableFilePaths: shareableFilePaths,
+      shareableFilePaths: shareableFilesWithReport,
       summaryText: summaryText,
+    );
+  }
+
+  Future<DebugExportChannelResult?> _exportToDownloadsIfSupported({
+    required String runId,
+    required List<String> localFilePaths,
+  }) async {
+    return DebugExportChannel.exportFilesToDownloads(
+      directoryName: 'kyc_thesis_reports/$runId',
+      sourcePaths: localFilePaths,
     );
   }
 
