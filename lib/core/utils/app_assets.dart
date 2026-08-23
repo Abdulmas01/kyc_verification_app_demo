@@ -13,4 +13,8 @@ class AppAssets {
       "assets/models/liveness_shadow.tflite";
   static const String livenessShadowContract =
       "assets/models/liveness_shadow_contract.json";
+  static const String faceEmbeddingModel =
+      "assets/models/mobilefacenet_fp32.tflite";
+  static const String faceEmbeddingContract =
+      "assets/models/mobilefacenet_fp32_contract.json";
 }

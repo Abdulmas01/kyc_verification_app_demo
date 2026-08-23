@@ -1,0 +1,107 @@
+{
+  "schema_version": 1,
+  "run_id": "mobileface_1787359084",
+  "variant": "fp32_litert",
+  "artifact": "mobilefacenet_fp32.tflite",
+  "artifact_sha256": "4a64c98b99d4ce224f5bad360b7bde868afb24d16c6aec623e9485e2bded52aa",
+  "usage_designation": "research_only",
+  "input": {
+    "name": "input.1",
+    "shape": [
+      1,
+      112,
+      112,
+      3
+    ],
+    "color": "RGB",
+    "layout": "NHWC",
+    "dtype": "float32",
+    "resize": {
+      "mode": "stretch",
+      "interpolation": "bilinear"
+    },
+    "normalization": {
+      "scale": 1.0,
+      "mean": [
+        127.5,
+        127.5,
+        127.5
+      ],
+      "std": [
+        127.5,
+        127.5,
+        127.5
+      ]
+    },
+    "pipeline": "uint8_rgb_face_crop -> resize_bilinear_stretch -> float32 -> artifact_mean_std -> nhwc"
+  },
+  "output": {
+    "name": "516",
+    "dimension": 512,
+    "l2_normalized_by_consumer": true,
+    "similarity_metric": "cosine",
+    "similarity_transform": "(cosine+1)/2",
+    "similarity_range": [
+      0.0,
+      1.0
+    ],
+    "score_semantics": "similarity_not_probability",
+    "shape": [
+      1,
+      512
+    ]
+  },
+  "extraction": {
+    "roi_by_type": {
+      "nin_smart": [
+        0.03,
+        0.38,
+        0.15,
+        0.8
+      ],
+      "voter_card": [
+        0.03,
+        0.4,
+        0.12,
+        0.82
+      ],
+      "drivers_license": [
+        0.02,
+        0.42,
+        0.1,
+        0.85
+      ],
+      "passport": [
+        0.1,
+        0.6,
+        0.05,
+        0.75
+      ],
+      "unknown": [
+        0.0,
+        1.0,
+        0.0,
+        1.0
+      ]
+    },
+    "quality": {
+      "minimum_face_side_pixels": 40,
+      "minimum_laplacian_variance": 15.0,
+      "minimum_mean_brightness": 25.0,
+      "maximum_mean_brightness": 235.0
+    },
+    "selfie_face_policy": {
+      "selection": "largest_usable_face",
+      "minimum_competing_face_area_ratio": 0.2,
+      "rejection": "reject_when_secondary_usable_face_area_reaches_ratio"
+    }
+  },
+  "threshold": 0.6741582155227661,
+  "mobile_role": "non_authoritative_mobile_candidate",
+  "source_run_id": "mobileface_1787359084",
+  "source_artifact": "mobilefacenet_fp32.onnx",
+  "source_artifact_sha256": "9cc6e4a75f0e2bf0b1aed94578f144d15175f357bdc05e815e5c4a02b319eb4f",
+  "artifact_size_bytes": 13635544,
+  "parity_report": "mobilefacenet_litert_parity.json",
+  "flutter_device_benchmark_required": true
+}

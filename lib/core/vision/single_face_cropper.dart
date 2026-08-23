@@ -79,6 +79,64 @@ class SingleFaceCropper {
     }
   }
 
+  static Future<SingleFaceCropResult> cropFromImageFileWithCustomError({
+    required String path,
+    required String noFaceMessage,
+    required String multipleFacesMessage,
+    double paddingFactor = 0.20,
+  }) async {
+    final detector = FaceDetector(
+      options: FaceDetectorOptions(
+        performanceMode: FaceDetectorMode.accurate,
+        enableContours: false,
+        enableTracking: false,
+        enableClassification: false,
+      ),
+    );
+
+    try {
+      final faces = await detector.processImage(InputImage.fromFilePath(path));
+      if (faces.isEmpty) {
+        throw StateError(noFaceMessage);
+      }
+      if (faces.length > 1) {
+        throw StateError(multipleFacesMessage);
+      }
+
+      final bytes = await File(path).readAsBytes();
+      final decoded = img.decodeImage(bytes);
+      if (decoded == null) {
+        throw StateError('Unable to decode image for face cropping.');
+      }
+      final oriented = img.bakeOrientation(decoded);
+      final face = faces.first;
+      final crop = _expandAndClamp(
+        left: face.boundingBox.left,
+        top: face.boundingBox.top,
+        right: face.boundingBox.right,
+        bottom: face.boundingBox.bottom,
+        imageWidth: oriented.width,
+        imageHeight: oriented.height,
+        paddingFactor: paddingFactor,
+      );
+
+      final cropped = img.copyCrop(
+        oriented,
+        x: crop.$1,
+        y: crop.$2,
+        width: crop.$3,
+        height: crop.$4,
+      );
+
+      return SingleFaceCropResult(
+        croppedFace: cropped,
+        faceCount: 1,
+      );
+    } finally {
+      detector.close();
+    }
+  }
+
   static (int, int, int, int) _expandAndClamp({
     required double left,
     required double top,

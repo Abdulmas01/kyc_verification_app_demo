@@ -5,7 +5,9 @@ import '../utils/app_assets.dart';
 class ModelLoader {
   static Interpreter? _docQuality;
   static Interpreter? _livenessShadow;
+  static Interpreter? _faceEmbedding;
   static bool _livenessShadowLoadAttempted = false;
+  static bool _faceEmbeddingLoadAttempted = false;
   static bool _loaded = false;
 
   static Future<void> init() async {
@@ -36,6 +38,24 @@ class ModelLoader {
       _livenessShadow =
           await Interpreter.fromAsset(AppAssets.livenessShadowModel);
       return _livenessShadow;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Loads the optional mobile face embedding model on demand.
+  ///
+  /// This is a research/mobile-candidate model for thesis benchmarking and
+  /// future SDK work. Backend verification remains authoritative for now.
+  static Future<Interpreter?> loadOptionalFaceEmbedding() async {
+    if (_faceEmbedding != null) return _faceEmbedding;
+    if (_faceEmbeddingLoadAttempted) return null;
+    _faceEmbeddingLoadAttempted = true;
+
+    try {
+      _faceEmbedding =
+          await Interpreter.fromAsset(AppAssets.faceEmbeddingModel);
+      return _faceEmbedding;
     } catch (_) {
       return null;
     }
