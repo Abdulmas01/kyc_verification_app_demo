@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:kyc_verification_app_demo/features/kyc/domain/models/face_embedding_match_result.dart';
 import 'package:kyc_verification_app_demo/features/kyc/domain/models/verification_result.dart';
 import 'package:kyc_verification_app_demo/features/kyc/presentation/models/thesis_debug_report.dart';
 
@@ -134,6 +135,32 @@ class ThesisDebugReportNotifier extends Notifier<ThesisDebugReport> {
     );
   }
 
+  void recordMobileFaceMatchSuccess(FaceEmbeddingMatchResult result) {
+    state = state.copyWith(
+      mobileFaceMatchAttempted: true,
+      mobileFaceMatchAvailable: true,
+      mobileFaceMatchScore: result.score,
+      mobileFaceMatchThreshold: result.threshold,
+      mobileFaceMatchDocumentLatencyMs: result.documentEmbeddingLatencyMs,
+      mobileFaceMatchSelfieLatencyMs: result.selfieEmbeddingLatencyMs,
+      mobileFaceMatchPortraitPath: result.documentPortraitPath,
+      clearMobileFaceMatchError: true,
+    );
+  }
+
+  void recordMobileFaceMatchUnavailable(String message) {
+    state = state.copyWith(
+      mobileFaceMatchAttempted: true,
+      mobileFaceMatchAvailable: false,
+      mobileFaceMatchError: message,
+      clearMobileFaceMatchScore: true,
+      clearMobileFaceMatchThreshold: true,
+      clearMobileFaceMatchDocumentLatencyMs: true,
+      clearMobileFaceMatchSelfieLatencyMs: true,
+      clearMobileFaceMatchPortraitPath: true,
+    );
+  }
+
   void recordProcessingStarted() {
     state = state.copyWith(
       processingStartedAt: DateTime.now(),
@@ -144,6 +171,14 @@ class ThesisDebugReportNotifier extends Notifier<ThesisDebugReport> {
       clearTotalVerificationDurationMs: true,
       pollAttempts: 0,
       uploadProgressPeak: 0,
+      mobileFaceMatchAttempted: false,
+      mobileFaceMatchAvailable: false,
+      clearMobileFaceMatchScore: true,
+      clearMobileFaceMatchThreshold: true,
+      clearMobileFaceMatchDocumentLatencyMs: true,
+      clearMobileFaceMatchSelfieLatencyMs: true,
+      clearMobileFaceMatchPortraitPath: true,
+      clearMobileFaceMatchError: true,
     );
   }
 

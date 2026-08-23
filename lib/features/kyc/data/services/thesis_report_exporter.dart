@@ -41,6 +41,7 @@ class ThesisReportExporter {
 
     String? copiedDocumentPath;
     String? copiedSelfiePath;
+    String? copiedDocumentPortraitPath;
     copiedDocumentPath = await _copyIfPresent(
       sourcePath: report.normalizedDocumentPath ?? report.documentPath,
       targetPath: '${capturesDirectory.path}/document.jpg',
@@ -48,6 +49,10 @@ class ThesisReportExporter {
     copiedSelfiePath = await _copyIfPresent(
       sourcePath: report.selfiePath,
       targetPath: '${capturesDirectory.path}/selfie.jpg',
+    );
+    copiedDocumentPortraitPath = await _copyIfPresent(
+      sourcePath: report.mobileFaceMatchPortraitPath,
+      targetPath: '${capturesDirectory.path}/document_portrait.jpg',
     );
 
     final backendPayloadPath = '${backendDirectory.path}/result_payload.json';
@@ -61,6 +66,7 @@ class ThesisReportExporter {
       'captures': {
         'document': copiedDocumentPath,
         'selfie': copiedSelfiePath,
+        'document_portrait': copiedDocumentPortraitPath,
       },
       'backend': {
         'result_payload': report.result != null ? backendPayloadPath : null,
@@ -86,6 +92,7 @@ class ThesisReportExporter {
       jsonPath,
       if (copiedDocumentPath != null) copiedDocumentPath,
       if (copiedSelfiePath != null) copiedSelfiePath,
+      if (copiedDocumentPortraitPath != null) copiedDocumentPortraitPath,
       if (report.result != null) backendPayloadPath,
     ];
 
@@ -150,6 +157,14 @@ class ThesisReportExporter {
       '- Mobile Shadow Interpretation: ${_formatMobileShadowInterpretation(report)}',
       '- Mobile Shadow Latency: ${_formatDouble(report.mobileLivenessShadowLatencyMs, suffix: ' ms')}',
       '- Mobile Shadow Error: ${report.mobileLivenessShadowError ?? 'None'}',
+      '- Mobile Face Match Attempted: ${report.mobileFaceMatchAttempted}',
+      '- Mobile Face Match Available: ${report.mobileFaceMatchAvailable}',
+      '- Mobile Face Match Score: ${_formatDouble(report.mobileFaceMatchScore)}',
+      '- Mobile Face Match Threshold: ${_formatDouble(report.mobileFaceMatchThreshold)}',
+      '- Mobile Face Match Interpretation: ${_formatFaceMatchInterpretation(report)}',
+      '- Mobile Face Match Document Latency: ${_formatDouble(report.mobileFaceMatchDocumentLatencyMs, suffix: ' ms')}',
+      '- Mobile Face Match Selfie Latency: ${_formatDouble(report.mobileFaceMatchSelfieLatencyMs, suffix: ' ms')}',
+      '- Mobile Face Match Error: ${report.mobileFaceMatchError ?? 'None'}',
       '- Last Error: ${report.selfieError ?? 'None'}',
       '',
       '## Processing',
@@ -176,6 +191,7 @@ class ThesisReportExporter {
       '- `report.md`',
       '- `supporting/captures/document.jpg`: ${supportingFiles['captures']['document'] ?? 'Not exported'}',
       '- `supporting/captures/selfie.jpg`: ${supportingFiles['captures']['selfie'] ?? 'Not exported'}',
+      '- `supporting/captures/document_portrait.jpg`: ${supportingFiles['captures']['document_portrait'] ?? 'Not exported'}',
       '- `supporting/backend/result_payload.json`: ${supportingFiles['backend']['result_payload'] ?? 'Not exported'}',
       '',
       '## Config Snapshot',
@@ -209,6 +225,18 @@ class ThesisReportExporter {
     if (ratio >= 0.85) return 'borderline below threshold';
     if (ratio >= 0.5) return 'clearly below threshold';
     return 'very far below threshold';
+  }
+
+  String _formatFaceMatchInterpretation(ThesisDebugReport report) {
+    final score = report.mobileFaceMatchScore;
+    final threshold = report.mobileFaceMatchThreshold;
+    if (score == null || threshold == null || threshold <= 0) return 'N/A';
+
+    final ratio = score / threshold;
+    if (ratio >= 1) return 'meets threshold';
+    if (ratio >= 0.9) return 'near threshold';
+    if (ratio >= 0.7) return 'below threshold';
+    return 'far below threshold';
   }
 }
 

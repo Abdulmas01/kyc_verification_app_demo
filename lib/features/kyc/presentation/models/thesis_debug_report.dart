@@ -32,6 +32,14 @@ class ThesisDebugReport {
     this.mobileLivenessShadowThreshold,
     this.mobileLivenessShadowLatencyMs,
     this.mobileLivenessShadowError,
+    this.mobileFaceMatchAttempted = false,
+    this.mobileFaceMatchAvailable = false,
+    this.mobileFaceMatchScore,
+    this.mobileFaceMatchThreshold,
+    this.mobileFaceMatchDocumentLatencyMs,
+    this.mobileFaceMatchSelfieLatencyMs,
+    this.mobileFaceMatchPortraitPath,
+    this.mobileFaceMatchError,
     this.processingStartedAt,
     this.uploadProgressPeak = 0,
     this.uploadDurationMs,
@@ -74,6 +82,14 @@ class ThesisDebugReport {
   final double? mobileLivenessShadowThreshold;
   final double? mobileLivenessShadowLatencyMs;
   final String? mobileLivenessShadowError;
+  final bool mobileFaceMatchAttempted;
+  final bool mobileFaceMatchAvailable;
+  final double? mobileFaceMatchScore;
+  final double? mobileFaceMatchThreshold;
+  final double? mobileFaceMatchDocumentLatencyMs;
+  final double? mobileFaceMatchSelfieLatencyMs;
+  final String? mobileFaceMatchPortraitPath;
+  final String? mobileFaceMatchError;
   final DateTime? processingStartedAt;
   final double uploadProgressPeak;
   final int? uploadDurationMs;
@@ -139,6 +155,20 @@ class ThesisDebugReport {
     bool clearMobileLivenessShadowLatencyMs = false,
     String? mobileLivenessShadowError,
     bool clearMobileLivenessShadowError = false,
+    bool? mobileFaceMatchAttempted,
+    bool? mobileFaceMatchAvailable,
+    double? mobileFaceMatchScore,
+    bool clearMobileFaceMatchScore = false,
+    double? mobileFaceMatchThreshold,
+    bool clearMobileFaceMatchThreshold = false,
+    double? mobileFaceMatchDocumentLatencyMs,
+    bool clearMobileFaceMatchDocumentLatencyMs = false,
+    double? mobileFaceMatchSelfieLatencyMs,
+    bool clearMobileFaceMatchSelfieLatencyMs = false,
+    String? mobileFaceMatchPortraitPath,
+    bool clearMobileFaceMatchPortraitPath = false,
+    String? mobileFaceMatchError,
+    bool clearMobileFaceMatchError = false,
     DateTime? processingStartedAt,
     bool clearProcessingStartedAt = false,
     double? uploadProgressPeak,
@@ -222,6 +252,30 @@ class ThesisDebugReport {
       mobileLivenessShadowError: clearMobileLivenessShadowError
           ? null
           : (mobileLivenessShadowError ?? this.mobileLivenessShadowError),
+      mobileFaceMatchAttempted:
+          mobileFaceMatchAttempted ?? this.mobileFaceMatchAttempted,
+      mobileFaceMatchAvailable:
+          mobileFaceMatchAvailable ?? this.mobileFaceMatchAvailable,
+      mobileFaceMatchScore: clearMobileFaceMatchScore
+          ? null
+          : (mobileFaceMatchScore ?? this.mobileFaceMatchScore),
+      mobileFaceMatchThreshold: clearMobileFaceMatchThreshold
+          ? null
+          : (mobileFaceMatchThreshold ?? this.mobileFaceMatchThreshold),
+      mobileFaceMatchDocumentLatencyMs: clearMobileFaceMatchDocumentLatencyMs
+          ? null
+          : (mobileFaceMatchDocumentLatencyMs ??
+              this.mobileFaceMatchDocumentLatencyMs),
+      mobileFaceMatchSelfieLatencyMs: clearMobileFaceMatchSelfieLatencyMs
+          ? null
+          : (mobileFaceMatchSelfieLatencyMs ??
+              this.mobileFaceMatchSelfieLatencyMs),
+      mobileFaceMatchPortraitPath: clearMobileFaceMatchPortraitPath
+          ? null
+          : (mobileFaceMatchPortraitPath ?? this.mobileFaceMatchPortraitPath),
+      mobileFaceMatchError: clearMobileFaceMatchError
+          ? null
+          : (mobileFaceMatchError ?? this.mobileFaceMatchError),
       processingStartedAt: clearProcessingStartedAt
           ? null
           : (processingStartedAt ?? this.processingStartedAt),
@@ -288,6 +342,16 @@ class ThesisDebugReport {
             'threshold': mobileLivenessShadowThreshold,
             'latency_ms': mobileLivenessShadowLatencyMs,
             'error': mobileLivenessShadowError,
+          },
+          'mobile_face_match': {
+            'attempted': mobileFaceMatchAttempted,
+            'available': mobileFaceMatchAvailable,
+            'score': mobileFaceMatchScore,
+            'threshold': mobileFaceMatchThreshold,
+            'document_latency_ms': mobileFaceMatchDocumentLatencyMs,
+            'selfie_latency_ms': mobileFaceMatchSelfieLatencyMs,
+            'document_portrait_path': mobileFaceMatchPortraitPath,
+            'error': mobileFaceMatchError,
           },
         },
       },
