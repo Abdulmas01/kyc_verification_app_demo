@@ -9,6 +9,7 @@ class ImageUtils {
   static const double documentGuideWidthFactor = 0.86;
   static const double documentGuideAspectRatio = 0.63;
   static const double documentGuideMaxHeightFactor = 0.82;
+  static const double documentQualityCropScale = 0.82;
 
   static Future<File> normalizeDocumentImage({
     required String inputPath,
@@ -88,18 +89,23 @@ class ImageUtils {
   static Rect centeredGuideCropRect({
     required double imageWidth,
     required double imageHeight,
+    double scale = 1.0,
   }) {
-    final guideWidth = imageWidth * documentGuideWidthFactor;
+    var guideWidth = imageWidth * documentGuideWidthFactor;
     var guideHeight = guideWidth * documentGuideAspectRatio;
 
     if (guideHeight > imageHeight * documentGuideMaxHeightFactor) {
       guideHeight = imageHeight * documentGuideMaxHeightFactor;
+      guideWidth = guideHeight / documentGuideAspectRatio;
     }
 
-    final left = (imageWidth - guideWidth) / 2;
-    final top = (imageHeight - guideHeight) / 2;
+    final scaledWidth = guideWidth * scale.clamp(0.1, 1.0);
+    final scaledHeight = guideHeight * scale.clamp(0.1, 1.0);
 
-    return Rect.fromLTWH(left, top, guideWidth, guideHeight);
+    final left = (imageWidth - scaledWidth) / 2;
+    final top = (imageHeight - scaledHeight) / 2;
+
+    return Rect.fromLTWH(left, top, scaledWidth, scaledHeight);
   }
 
   static Rect? _clampRectToGuide(Rect cropRect, Rect guideRect) {

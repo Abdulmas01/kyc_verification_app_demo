@@ -367,6 +367,7 @@ Future<void> _entry(_IsolateConfig config) async {
       final guideRect = ImageUtils.centeredGuideCropRect(
         imageWidth: image.width.toDouble(),
         imageHeight: image.height.toDouble(),
+        scale: ImageUtils.documentQualityCropScale,
       );
       final cropped = _cropImageToRect(image, guideRect);
       final resized = img.copyResize(
