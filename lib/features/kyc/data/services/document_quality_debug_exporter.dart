@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 
+import '../../../../core/platform/debug_export_channel.dart';
 import '../../../../core/ml/quality_isolate.dart';
 import '../../../../core/ml/quality_model.dart';
 
@@ -14,12 +15,14 @@ class DocumentQualityDebugExportResult {
     required this.metadataPath,
     required this.fullFramePath,
     required this.modelInputPath,
+    required this.shareableFilePaths,
   });
 
   final String directoryPath;
   final String metadataPath;
   final String fullFramePath;
   final String modelInputPath;
+  final List<String> shareableFilePaths;
 }
 
 class DocumentQualityDebugExporter {
@@ -84,11 +87,25 @@ class DocumentQualityDebugExporter {
       const JsonEncoder.withIndent('  ').convert(metadata),
     );
 
+    final localFilePaths = [
+      metadataPath,
+      fullFramePath,
+      modelInputPath,
+    ];
+    final downloadExport = await DebugExportChannel.exportFilesToDownloads(
+      directoryName: 'quality_debug_exports/$runId/sample_$timestamp',
+      sourcePaths: localFilePaths,
+    );
+    final finalDirectoryPath = downloadExport?.directoryPath.isNotEmpty == true
+        ? downloadExport!.directoryPath
+        : exportDirectory.path;
+
     return DocumentQualityDebugExportResult(
-      directoryPath: exportDirectory.path,
+      directoryPath: finalDirectoryPath,
       metadataPath: metadataPath,
       fullFramePath: fullFramePath,
       modelInputPath: modelInputPath,
+      shareableFilePaths: localFilePaths,
     );
   }
 }

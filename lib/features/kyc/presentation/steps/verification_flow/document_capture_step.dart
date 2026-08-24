@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart';
@@ -63,6 +64,7 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
   late final DocumentCaptureRuntimeController _runtimeController;
   Timer? _autoCaptureTimer;
   QualityIsolate? _qualityIsolate;
+  KycCaptureBundle? _lastCapturedBundle;
 
   @override
   void initState() {
@@ -516,9 +518,12 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
       final statusMessage = result.usedGuideCropFallback
           ? 'Document captured from the guide frame.'
           : 'Document detected. Looks good!';
-      notifier.setDocumentDetected(true);
-      notifier.setStatus(statusMessage);
-      notifier.clearError();
+      _lastCapturedBundle =
+          KycCaptureBundle(documentPath: result.normalizedPath);
+      notifier.setCapturedDocument(
+        previewPath: result.originalPath,
+        statusMessage: statusMessage,
+      );
       ref.read(thesisDebugReportProvider.notifier).recordDocumentCapture(
             detected: true,
             documentPath: result.originalPath,
@@ -537,15 +542,14 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
       await Navigator.of(context).push(
         MaterialPageRoute(
           builder: (_) => SelfieCaptureStep(
-            captureBundle:
-                KycCaptureBundle(documentPath: result.normalizedPath),
+            captureBundle: _lastCapturedBundle!,
           ),
         ),
       );
       if (!mounted) return;
       _runtimeController.setNavigatingToSelfie(false);
       _cameraLifecycle.markRouteActive(true);
-      await _resumeCameraAfterReturn();
+      _restoreCapturedStateAfterReturn(statusMessage: statusMessage);
     } catch (e) {
       if (!mounted) return;
       _runtimeController.setNavigatingToSelfie(false);
@@ -558,10 +562,12 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
     } finally {
       if (mounted) {
         notifier.setDetecting(false);
+        final latestUiState = ref.read(documentCaptureUiProvider);
         if (_controller != null &&
             !_cameraLifecycle.isStreaming &&
             !_runtimeController.isNavigatingToSelfie &&
-            !_controller!.value.isTakingPicture) {
+            !_controller!.value.isTakingPicture &&
+            !latestUiState.documentDetected) {
           await _startImageStream();
         }
       }
@@ -642,6 +648,14 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
                           );
                         }
 
+                        if (uiState.documentDetected &&
+                            uiState.capturedPreviewPath != null) {
+                          return Image.file(
+                            File(uiState.capturedPreviewPath!),
+                            fit: BoxFit.cover,
+                          );
+                        }
+
                         return Stack(
                           fit: StackFit.expand,
                           children: [
@@ -657,45 +671,65 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
                 ),
               ),
               const SizedBox(height: AppSpacing.s16),
-              SizedBox(
-                width: double.infinity,
-                child: ButtonWidget(
-                  text: uiState.isPermissionDenied ||
-                          uiState.cameraErrorMessage != null
-                      ? 'Retry camera'
-                      : uiState.documentDetected
-                          ? 'Recapture Document'
-                          : (uiState.isDetecting
-                              ? 'Detecting...'
-                              : 'Capture Document'),
-                  enabled: uiState.isPermissionDenied ||
-                          uiState.cameraErrorMessage != null
-                      ? true
-                      : uiState.documentDetected
-                          ? true
-                          : !uiState.isDetecting &&
-                              (_usesQualityGate ? uiState.isQualityGood : true),
-                  onTap: uiState.isPermissionDenied ||
-                          uiState.cameraErrorMessage != null
-                      ? _retryCameraSetup
-                      : uiState.documentDetected
-                          ? _startRecaptureFlow
-                          : _captureAndDetect,
+              if (uiState.documentDetected) ...[
+                SizedBox(
+                  width: double.infinity,
+                  child: ButtonWidget(
+                    text: 'Continue',
+                    enabled: !uiState.isDetecting,
+                    onTap: _continueWithCapturedDocument,
+                  ),
                 ),
-              ),
+                const SizedBox(height: AppSpacing.s8),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton(
+                    onPressed: uiState.isDetecting ? null : _startRecaptureFlow,
+                    child: const Text('Recapture Document'),
+                  ),
+                ),
+              ] else
+                SizedBox(
+                  width: double.infinity,
+                  child: ButtonWidget(
+                    text: uiState.isPermissionDenied ||
+                            uiState.cameraErrorMessage != null
+                        ? 'Retry camera'
+                        : (uiState.isDetecting
+                            ? 'Detecting...'
+                            : 'Capture Document'),
+                    enabled: uiState.isPermissionDenied ||
+                            uiState.cameraErrorMessage != null
+                        ? true
+                        : !uiState.isDetecting &&
+                            (_usesQualityGate ? uiState.isQualityGood : true),
+                    onTap: uiState.isPermissionDenied ||
+                            uiState.cameraErrorMessage != null
+                        ? _retryCameraSetup
+                        : _captureAndDetect,
+                  ),
+                ),
               if (kDebugMode) ...[
                 const SizedBox(height: AppSpacing.s8),
                 SizedBox(
                   width: double.infinity,
                   child: OutlinedButton(
                     onPressed: () {
-                      setState(() {
-                        _runtimeController.setPendingDebugSampleExport(true);
-                      });
+                      final uiNotifier =
+                          ref.read(documentCaptureUiProvider.notifier);
+                      _runtimeController.setPendingDebugSampleExport(true);
+                      if (uiState.documentDetected) {
+                        unawaited(_startRecaptureFlow());
+                        uiNotifier.setStatus(
+                          'Live sample export armed. Re-align your ID inside the frame.',
+                        );
+                      }
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
+                        SnackBar(
                           content: Text(
-                            'Next live quality inference will be exported.',
+                            uiState.documentDetected
+                                ? 'Live quality export armed. Recapture started so the next live frame can be saved.'
+                                : 'Next live quality inference will be exported to Downloads.',
                           ),
                         ),
                       );
@@ -754,20 +788,22 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
     });
   }
 
-  Future<void> _resumeCameraAfterReturn() async {
+  void _restoreCapturedStateAfterReturn({
+    required String statusMessage,
+  }) {
     _autoCaptureTimer?.cancel();
     _runtimeController.resetTransientState(
       initialFrameStride: widget.effectiveCaptureConfig.initialFrameStride,
     );
     _cameraLifecycle.syncStreamingFromController(null);
     _guidanceService.reset();
-    ref.read(documentCaptureUiProvider.notifier)
-      ..setStatus('Document detected. Looks good!')
-      ..setDocumentDetected(true)
-      ..setAutoCapturing(false)
-      ..setDetecting(false)
-      ..clearError();
-    await _resumePreviewIfNeeded();
+    final previewPath = ref.read(documentCaptureUiProvider).capturedPreviewPath;
+    if (previewPath != null) {
+      ref.read(documentCaptureUiProvider.notifier).setCapturedDocument(
+            previewPath: previewPath,
+            statusMessage: statusMessage,
+          );
+    }
   }
 
   Future<void> _startRecaptureFlow() async {
@@ -776,16 +812,38 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
     _runtimeController.resetTransientState(
       initialFrameStride: widget.effectiveCaptureConfig.initialFrameStride,
     );
+    _lastCapturedBundle = null;
     _guidanceService.reset();
     ref.read(documentCaptureUiProvider.notifier)
       ..setStatus('Align your ID inside the frame.')
-      ..setDocumentDetected(false)
+      ..clearCapturedDocument()
       ..setAutoCapturing(false)
       ..setDetecting(false)
       ..clearError();
     await _stopImageStreamInternal();
     await _resumePreviewIfNeeded();
     await _startImageStreamInternal();
+  }
+
+  Future<void> _continueWithCapturedDocument() async {
+    final bundle = _lastCapturedBundle;
+    if (bundle == null) {
+      await _startRecaptureFlow();
+      return;
+    }
+
+    final statusMessage = ref.read(documentCaptureUiProvider).statusMessage;
+    _runtimeController.setNavigatingToSelfie(true);
+    _cameraLifecycle.markRouteActive(false);
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => SelfieCaptureStep(captureBundle: bundle),
+      ),
+    );
+    if (!mounted) return;
+    _runtimeController.setNavigatingToSelfie(false);
+    _cameraLifecycle.markRouteActive(true);
+    _restoreCapturedStateAfterReturn(statusMessage: statusMessage);
   }
 
   Map<String, dynamic> _documentConfigToJson(DocumentCaptureConfig config) {

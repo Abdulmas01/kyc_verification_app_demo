@@ -74,7 +74,31 @@ class DocumentCaptureUiNotifier
   }
 
   void setDocumentDetected(bool value) {
-    state = state.copyWith(documentDetected: value);
+    state = state.copyWith(
+      documentDetected: value,
+      capturedPreviewPath: value ? state.capturedPreviewPath : null,
+    );
+  }
+
+  void setCapturedDocument({
+    required String previewPath,
+    required String statusMessage,
+  }) {
+    state = state.copyWith(
+      documentDetected: true,
+      capturedPreviewPath: previewPath,
+      statusMessage: statusMessage,
+      isDetecting: false,
+      isAutoCapturing: false,
+      errorMessage: null,
+    );
+  }
+
+  void clearCapturedDocument() {
+    state = state.copyWith(
+      documentDetected: false,
+      capturedPreviewPath: null,
+    );
   }
 
   void setAutoCapturing(bool value) {

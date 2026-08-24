@@ -10,6 +10,7 @@ class DocumentCaptureUiState {
   final bool isPermissionDenied;
   final bool isPermanentlyDenied;
   final bool isCameraReady;
+  final String? capturedPreviewPath;
   final String? cameraErrorMessage;
   final String? errorMessage;
 
@@ -23,6 +24,7 @@ class DocumentCaptureUiState {
     required this.isPermissionDenied,
     required this.isPermanentlyDenied,
     required this.isCameraReady,
+    this.capturedPreviewPath,
     this.cameraErrorMessage,
     this.errorMessage,
   });
@@ -38,6 +40,7 @@ class DocumentCaptureUiState {
       isPermissionDenied: false,
       isPermanentlyDenied: false,
       isCameraReady: false,
+      capturedPreviewPath: null,
       cameraErrorMessage: null,
       errorMessage: null,
     );
@@ -53,6 +56,7 @@ class DocumentCaptureUiState {
     bool? isPermissionDenied,
     bool? isPermanentlyDenied,
     bool? isCameraReady,
+    Object? capturedPreviewPath = _sentinel,
     Object? cameraErrorMessage = _sentinel,
     Object? errorMessage = _sentinel,
   }) {
@@ -66,6 +70,9 @@ class DocumentCaptureUiState {
       isPermissionDenied: isPermissionDenied ?? this.isPermissionDenied,
       isPermanentlyDenied: isPermanentlyDenied ?? this.isPermanentlyDenied,
       isCameraReady: isCameraReady ?? this.isCameraReady,
+      capturedPreviewPath: capturedPreviewPath == _sentinel
+          ? this.capturedPreviewPath
+          : capturedPreviewPath as String?,
       cameraErrorMessage: cameraErrorMessage == _sentinel
           ? this.cameraErrorMessage
           : cameraErrorMessage as String?,
