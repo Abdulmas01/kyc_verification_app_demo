@@ -656,14 +656,13 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
                           );
                         }
 
-                        return Stack(
-                          fit: StackFit.expand,
-                          children: [
-                            CameraPreview(_controller!),
-                            DocumentOverlayWidget(
+                        return Center(
+                          child: CameraPreview(
+                            _controller!,
+                            child: DocumentOverlayWidget(
                               visible: !uiState.documentDetected,
                             ),
-                          ],
+                          ),
                         );
                       },
                     ),
@@ -820,9 +819,12 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
       ..setAutoCapturing(false)
       ..setDetecting(false)
       ..clearError();
-    await _stopImageStreamInternal();
-    await _resumePreviewIfNeeded();
-    await _startImageStreamInternal();
+    await _pauseCamera();
+    await _disposeController();
+    if (!mounted) return;
+    setState(() {
+      _initializeFuture = _ensureCameraInitialized();
+    });
   }
 
   Future<void> _continueWithCapturedDocument() async {
