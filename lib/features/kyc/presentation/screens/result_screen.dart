@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -7,6 +6,7 @@ import 'package:kyc_verification_app_demo/core/platform/debug_share_channel.dart
 import 'package:kyc_verification_app_demo/core/theme/app_spacing.dart';
 import 'package:kyc_verification_app_demo/core/widget/button_widget.dart';
 import 'package:kyc_verification_app_demo/features/kyc/data/services/thesis_report_exporter.dart';
+import 'package:kyc_verification_app_demo/features/kyc/presentation/controllers/thesis_diagnostics_provider.dart';
 import 'package:kyc_verification_app_demo/features/kyc/presentation/controllers/thesis_debug_report_notifier.dart';
 import 'package:kyc_verification_app_demo/features/kyc/presentation/models/thesis_debug_report.dart';
 
@@ -31,7 +31,8 @@ class _ResultScreenState extends ConsumerState<ResultScreen> {
   @override
   void initState() {
     super.initState();
-    if (kDebugMode) {
+    final diagnostics = ref.read(thesisDiagnosticsProvider);
+    if (diagnostics.autoExportReports) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted || _didScheduleAutoExport) return;
         final report = ref.read(thesisDebugReportProvider);
@@ -47,6 +48,7 @@ class _ResultScreenState extends ConsumerState<ResultScreen> {
     final decisionUi = widget.result.decision;
     final latestExport = ref.watch(latestThesisReportExportProvider);
     final debugReport = ref.watch(thesisDebugReportProvider);
+    final diagnostics = ref.watch(thesisDiagnosticsProvider);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Result')),
@@ -96,7 +98,7 @@ class _ResultScreenState extends ConsumerState<ResultScreen> {
                             .map((code) => Chip(label: Text(code)))
                             .toList(),
                       ),
-                    if (kDebugMode) ...[
+                    if (diagnostics.showDebugUi) ...[
                       const SizedBox(height: AppSpacing.s24),
                       _DebugSignalsCard(result: widget.result),
                       const SizedBox(height: AppSpacing.s16),

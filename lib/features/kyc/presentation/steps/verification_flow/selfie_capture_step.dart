@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:camera/camera.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
@@ -27,6 +26,7 @@ import '../../../domain/models/selfie_liveness_challenge_request.dart';
 import '../../../domain/models/selfie_liveness_decision.dart';
 import '../../controllers/selfie_capture_runtime_controller.dart';
 import '../../controllers/selfie_capture_ui_notifier.dart';
+import '../../controllers/thesis_diagnostics_provider.dart';
 import '../../controllers/thesis_debug_report_notifier.dart';
 import '../../models/kyc_capture_config.dart';
 import '../../models/selfie_capture_ui_state.dart';
@@ -602,6 +602,7 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
   @override
   Widget build(BuildContext context) {
     final uiState = ref.watch(selfieCaptureUiProvider);
+    final diagnostics = ref.watch(thesisDiagnosticsProvider);
 
     return PopScope(
       onPopInvokedWithResult: (didPop, _) {
@@ -632,7 +633,7 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
                 _ErrorBanner(message: uiState.errorMessage ?? ''),
               ],
               const SizedBox(height: AppSpacing.s16),
-              if (kDebugMode) ...[
+              if (diagnostics.showDebugUi) ...[
                 Align(
                   alignment: Alignment.centerLeft,
                   child: Container(
