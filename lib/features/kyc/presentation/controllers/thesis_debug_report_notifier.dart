@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:kyc_verification_app_demo/features/kyc/domain/models/face_embedding_match_result.dart';
 import 'package:kyc_verification_app_demo/features/kyc/domain/models/verification_result.dart';
+import 'package:kyc_verification_app_demo/features/kyc/data/services/document_quality_debug_exporter.dart';
 import 'package:kyc_verification_app_demo/features/kyc/presentation/models/thesis_debug_report.dart';
 
 class ThesisDebugReportNotifier extends Notifier<ThesisDebugReport> {
@@ -23,13 +24,15 @@ class ThesisDebugReportNotifier extends Notifier<ThesisDebugReport> {
 
   void configureMobileLivenessShadow({required bool enabled}) {
     state = state.copyWith(
-      mobileLivenessShadowEnabled: enabled,
-      mobileLivenessShadowAttempted: false,
-      mobileLivenessShadowAvailable: false,
-      clearMobileLivenessShadowScore: true,
-      clearMobileLivenessShadowThreshold: true,
-      clearMobileLivenessShadowLatencyMs: true,
-      clearMobileLivenessShadowError: true,
+      mobileLivenessShadow: state.mobileLivenessShadow.copyWith(
+        enabled: enabled,
+        attempted: false,
+        available: false,
+        clearScore: true,
+        clearThreshold: true,
+        clearLatencyMs: true,
+        clearError: true,
+      ),
     );
   }
 
@@ -77,6 +80,18 @@ class ThesisDebugReportNotifier extends Notifier<ThesisDebugReport> {
     );
   }
 
+  void recordDocumentQualityDebugSample(
+      DocumentQualityDebugExportResult result) {
+    state = state.copyWith(
+      documentQualityDebugSample: state.documentQualityDebugSample.copyWith(
+        directoryPath: result.directoryPath,
+        fullFramePath: result.fullFramePath,
+        modelInputPath: result.modelInputPath,
+        metadataPath: result.metadataPath,
+      ),
+    );
+  }
+
   void recordSelfieFaceDetected(bool detected) {
     state = state.copyWith(selfieFaceDetected: detected);
   }
@@ -115,49 +130,57 @@ class ThesisDebugReportNotifier extends Notifier<ThesisDebugReport> {
     required double latencyMs,
   }) {
     state = state.copyWith(
-      mobileLivenessShadowAttempted: true,
-      mobileLivenessShadowAvailable: true,
-      mobileLivenessShadowScore: score,
-      mobileLivenessShadowThreshold: threshold,
-      mobileLivenessShadowLatencyMs: latencyMs,
-      clearMobileLivenessShadowError: true,
+      mobileLivenessShadow: state.mobileLivenessShadow.copyWith(
+        attempted: true,
+        available: true,
+        score: score,
+        threshold: threshold,
+        latencyMs: latencyMs,
+        clearError: true,
+      ),
     );
   }
 
   void recordMobileLivenessShadowUnavailable(String message) {
     state = state.copyWith(
-      mobileLivenessShadowAttempted: true,
-      mobileLivenessShadowAvailable: false,
-      mobileLivenessShadowError: message,
-      clearMobileLivenessShadowScore: true,
-      clearMobileLivenessShadowThreshold: true,
-      clearMobileLivenessShadowLatencyMs: true,
+      mobileLivenessShadow: state.mobileLivenessShadow.copyWith(
+        attempted: true,
+        available: false,
+        error: message,
+        clearScore: true,
+        clearThreshold: true,
+        clearLatencyMs: true,
+      ),
     );
   }
 
   void recordMobileFaceMatchSuccess(FaceEmbeddingMatchResult result) {
     state = state.copyWith(
-      mobileFaceMatchAttempted: true,
-      mobileFaceMatchAvailable: true,
-      mobileFaceMatchScore: result.score,
-      mobileFaceMatchThreshold: result.threshold,
-      mobileFaceMatchDocumentLatencyMs: result.documentEmbeddingLatencyMs,
-      mobileFaceMatchSelfieLatencyMs: result.selfieEmbeddingLatencyMs,
-      mobileFaceMatchPortraitPath: result.documentPortraitPath,
-      clearMobileFaceMatchError: true,
+      mobileFaceMatch: state.mobileFaceMatch.copyWith(
+        attempted: true,
+        available: true,
+        score: result.score,
+        threshold: result.threshold,
+        documentLatencyMs: result.documentEmbeddingLatencyMs,
+        selfieLatencyMs: result.selfieEmbeddingLatencyMs,
+        documentPortraitPath: result.documentPortraitPath,
+        clearError: true,
+      ),
     );
   }
 
   void recordMobileFaceMatchUnavailable(String message) {
     state = state.copyWith(
-      mobileFaceMatchAttempted: true,
-      mobileFaceMatchAvailable: false,
-      mobileFaceMatchError: message,
-      clearMobileFaceMatchScore: true,
-      clearMobileFaceMatchThreshold: true,
-      clearMobileFaceMatchDocumentLatencyMs: true,
-      clearMobileFaceMatchSelfieLatencyMs: true,
-      clearMobileFaceMatchPortraitPath: true,
+      mobileFaceMatch: state.mobileFaceMatch.copyWith(
+        attempted: true,
+        available: false,
+        error: message,
+        clearScore: true,
+        clearThreshold: true,
+        clearDocumentLatencyMs: true,
+        clearSelfieLatencyMs: true,
+        clearDocumentPortraitPath: true,
+      ),
     );
   }
 
@@ -171,14 +194,16 @@ class ThesisDebugReportNotifier extends Notifier<ThesisDebugReport> {
       clearTotalVerificationDurationMs: true,
       pollAttempts: 0,
       uploadProgressPeak: 0,
-      mobileFaceMatchAttempted: false,
-      mobileFaceMatchAvailable: false,
-      clearMobileFaceMatchScore: true,
-      clearMobileFaceMatchThreshold: true,
-      clearMobileFaceMatchDocumentLatencyMs: true,
-      clearMobileFaceMatchSelfieLatencyMs: true,
-      clearMobileFaceMatchPortraitPath: true,
-      clearMobileFaceMatchError: true,
+      mobileFaceMatch: state.mobileFaceMatch.copyWith(
+        attempted: false,
+        available: false,
+        clearScore: true,
+        clearThreshold: true,
+        clearDocumentLatencyMs: true,
+        clearSelfieLatencyMs: true,
+        clearDocumentPortraitPath: true,
+        clearError: true,
+      ),
     );
   }
 

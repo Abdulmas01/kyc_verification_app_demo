@@ -65,6 +65,11 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
   Timer? _autoCaptureTimer;
   QualityIsolate? _qualityIsolate;
   KycCaptureBundle? _lastCapturedBundle;
+  QualityDebugArtifacts? _latestQualityDebugArtifacts;
+  QualityResult? _latestQualityResult;
+  DocumentQuality? _latestGuidanceQuality;
+  String? _latestGuidanceMessage;
+  double? _latestInferenceMs;
 
   @override
   void initState() {
@@ -305,6 +310,13 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
         guidanceMessage: guidance.message,
         inferenceMs: stopwatch.elapsedMicroseconds / 1000,
       );
+      if (kDebugMode && inference.debugArtifacts != null) {
+        _latestQualityDebugArtifacts = inference.debugArtifacts;
+        _latestQualityResult = quality;
+        _latestGuidanceQuality = guidance.guidanceQuality;
+        _latestGuidanceMessage = guidance.message;
+        _latestInferenceMs = stopwatch.elapsedMicroseconds / 1000;
+      }
       ref.read(documentCaptureUiProvider.notifier).updateQuality(
             message: guidance.message,
             confidence: quality.confidence,
@@ -325,13 +337,6 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
       _handleAutoCapture(
         autoCaptureReady: guidance.autoCaptureReady,
       );
-      await _maybeExportDebugSample(
-        inference: inference,
-        quality: quality,
-        guidanceQuality: guidance.guidanceQuality,
-        guidanceMessage: guidance.message,
-        inferenceMs: stopwatch.elapsedMicroseconds / 1000,
-      );
       _recordInference(
         stopwatch.elapsedMicroseconds / 1000,
         quality: quality,
@@ -343,42 +348,6 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
     } finally {
       _runtimeController.finishFrameProcessing();
     }
-  }
-
-  Future<void> _maybeExportDebugSample({
-    required QualityInferenceResult inference,
-    required QualityResult quality,
-    required DocumentQuality guidanceQuality,
-    required String guidanceMessage,
-    required double inferenceMs,
-  }) async {
-    if (!_runtimeController.pendingDebugSampleExport) return;
-    _runtimeController.setPendingDebugSampleExport(false);
-    final debugArtifacts = inference.debugArtifacts;
-    if (debugArtifacts == null) return;
-
-    final runId = ref.read(thesisDebugReportProvider).runId;
-    final exportResult = await ref
-        .read(documentQualityDebugExporterProvider)
-        .exportLiveSample(
-          runId: runId,
-          quality: quality,
-          displayedGuidance: guidanceQuality,
-          guidanceMessage: guidanceMessage,
-          inferenceMs: inferenceMs,
-          frameNumber: _runtimeController.frameCounter,
-          frameStride: _runtimeController.frameStride,
-          documentConfig: _documentConfigToJson(widget.effectiveCaptureConfig),
-          debugArtifacts: debugArtifacts,
-        );
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          'Quality sample exported to ${exportResult.directoryPath}',
-        ),
-      ),
-    );
   }
 
   void _logGuidanceHold({
@@ -530,12 +499,14 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
             normalizedPath: result.normalizedPath,
             statusMessage: statusMessage,
           );
+      await _exportAutomaticDocumentQualityDebugSample();
       logPrint(
         result.captureSource == DocumentCaptureSource.guideFallback
             ? 'Document capture used centered guide crop fallback after detector miss.'
             : 'Document capture used object detector bounding box.',
       );
       HapticFeedback.mediumImpact();
+      if (!mounted) return;
 
       _runtimeController.setNavigatingToSelfie(true);
       _cameraLifecycle.markRouteActive(false);
@@ -572,6 +543,40 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
         }
       }
     }
+  }
+
+  Future<void> _exportAutomaticDocumentQualityDebugSample() async {
+    if (!kDebugMode) return;
+    final debugArtifacts = _latestQualityDebugArtifacts;
+    final quality = _latestQualityResult;
+    final guidanceQuality = _latestGuidanceQuality;
+    final guidanceMessage = _latestGuidanceMessage;
+    final inferenceMs = _latestInferenceMs;
+    if (debugArtifacts == null ||
+        quality == null ||
+        guidanceQuality == null ||
+        guidanceMessage == null ||
+        inferenceMs == null) {
+      return;
+    }
+
+    final runId = ref.read(thesisDebugReportProvider).runId;
+    final exportResult = await ref
+        .read(documentQualityDebugExporterProvider)
+        .exportLiveSample(
+          runId: runId,
+          quality: quality,
+          displayedGuidance: guidanceQuality,
+          guidanceMessage: guidanceMessage,
+          inferenceMs: inferenceMs,
+          frameNumber: _runtimeController.frameCounter,
+          frameStride: _runtimeController.frameStride,
+          documentConfig: _documentConfigToJson(widget.effectiveCaptureConfig),
+          debugArtifacts: debugArtifacts,
+        );
+    ref
+        .read(thesisDebugReportProvider.notifier)
+        .recordDocumentQualityDebugSample(exportResult);
   }
 
   @override
@@ -708,35 +713,6 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
                         : _captureAndDetect,
                   ),
                 ),
-              if (kDebugMode) ...[
-                const SizedBox(height: AppSpacing.s8),
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton(
-                    onPressed: () {
-                      final uiNotifier =
-                          ref.read(documentCaptureUiProvider.notifier);
-                      _runtimeController.setPendingDebugSampleExport(true);
-                      if (uiState.documentDetected) {
-                        unawaited(_startRecaptureFlow());
-                        uiNotifier.setStatus(
-                          'Live sample export armed. Re-align your ID inside the frame.',
-                        );
-                      }
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(
-                            uiState.documentDetected
-                                ? 'Live quality export armed. Recapture started so the next live frame can be saved.'
-                                : 'Next live quality inference will be exported to Downloads.',
-                          ),
-                        ),
-                      );
-                    },
-                    child: const Text('Export Live Quality Sample'),
-                  ),
-                ),
-              ],
               if (uiState.isAutoCapturing) ...[
                 const SizedBox(height: AppSpacing.s8),
                 Text(

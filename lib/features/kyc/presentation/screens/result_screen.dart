@@ -26,6 +26,21 @@ class ResultScreen extends ConsumerStatefulWidget {
 
 class _ResultScreenState extends ConsumerState<ResultScreen> {
   bool _isExporting = false;
+  bool _didScheduleAutoExport = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (kDebugMode) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || _didScheduleAutoExport) return;
+        final report = ref.read(thesisDebugReportProvider);
+        if (report.exportedAt != null) return;
+        _didScheduleAutoExport = true;
+        _exportReport();
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -348,7 +363,7 @@ class _DebugExportCard extends StatelessWidget {
           Text('Thesis Export', style: context.textTheme.titleMedium),
           const SizedBox(height: AppSpacing.s8),
           Text(
-            'Debug builds can export a structured report bundle with backend payload and capture artifacts.',
+            'Debug builds automatically export a structured thesis bundle for each completed run. You can still re-export or share it here.',
             style: context.textTheme.bodySmall,
           ),
           if (latestExport != null) ...[

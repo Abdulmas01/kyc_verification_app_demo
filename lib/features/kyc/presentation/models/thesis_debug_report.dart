@@ -1,5 +1,181 @@
 import 'package:kyc_verification_app_demo/features/kyc/domain/models/verification_result.dart';
 
+class DocumentQualityDebugSample {
+  const DocumentQualityDebugSample({
+    this.directoryPath,
+    this.fullFramePath,
+    this.modelInputPath,
+    this.metadataPath,
+  });
+
+  final String? directoryPath;
+  final String? fullFramePath;
+  final String? modelInputPath;
+  final String? metadataPath;
+
+  bool get isEmpty =>
+      directoryPath == null &&
+      fullFramePath == null &&
+      modelInputPath == null &&
+      metadataPath == null;
+
+  DocumentQualityDebugSample copyWith({
+    String? directoryPath,
+    bool clearDirectoryPath = false,
+    String? fullFramePath,
+    bool clearFullFramePath = false,
+    String? modelInputPath,
+    bool clearModelInputPath = false,
+    String? metadataPath,
+    bool clearMetadataPath = false,
+  }) {
+    return DocumentQualityDebugSample(
+      directoryPath:
+          clearDirectoryPath ? null : (directoryPath ?? this.directoryPath),
+      fullFramePath:
+          clearFullFramePath ? null : (fullFramePath ?? this.fullFramePath),
+      modelInputPath:
+          clearModelInputPath ? null : (modelInputPath ?? this.modelInputPath),
+      metadataPath:
+          clearMetadataPath ? null : (metadataPath ?? this.metadataPath),
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'directory_path': directoryPath,
+      'full_frame_path': fullFramePath,
+      'model_input_path': modelInputPath,
+      'metadata_path': metadataPath,
+    };
+  }
+}
+
+class MobileLivenessShadowDebug {
+  const MobileLivenessShadowDebug({
+    this.enabled = false,
+    this.attempted = false,
+    this.available = false,
+    this.score,
+    this.threshold,
+    this.latencyMs,
+    this.error,
+  });
+
+  final bool enabled;
+  final bool attempted;
+  final bool available;
+  final double? score;
+  final double? threshold;
+  final double? latencyMs;
+  final String? error;
+
+  MobileLivenessShadowDebug copyWith({
+    bool? enabled,
+    bool? attempted,
+    bool? available,
+    double? score,
+    bool clearScore = false,
+    double? threshold,
+    bool clearThreshold = false,
+    double? latencyMs,
+    bool clearLatencyMs = false,
+    String? error,
+    bool clearError = false,
+  }) {
+    return MobileLivenessShadowDebug(
+      enabled: enabled ?? this.enabled,
+      attempted: attempted ?? this.attempted,
+      available: available ?? this.available,
+      score: clearScore ? null : (score ?? this.score),
+      threshold: clearThreshold ? null : (threshold ?? this.threshold),
+      latencyMs: clearLatencyMs ? null : (latencyMs ?? this.latencyMs),
+      error: clearError ? null : (error ?? this.error),
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'enabled': enabled,
+      'attempted': attempted,
+      'available': available,
+      'score': score,
+      'threshold': threshold,
+      'latency_ms': latencyMs,
+      'error': error,
+    };
+  }
+}
+
+class MobileFaceMatchDebug {
+  const MobileFaceMatchDebug({
+    this.attempted = false,
+    this.available = false,
+    this.score,
+    this.threshold,
+    this.documentLatencyMs,
+    this.selfieLatencyMs,
+    this.documentPortraitPath,
+    this.error,
+  });
+
+  final bool attempted;
+  final bool available;
+  final double? score;
+  final double? threshold;
+  final double? documentLatencyMs;
+  final double? selfieLatencyMs;
+  final String? documentPortraitPath;
+  final String? error;
+
+  MobileFaceMatchDebug copyWith({
+    bool? attempted,
+    bool? available,
+    double? score,
+    bool clearScore = false,
+    double? threshold,
+    bool clearThreshold = false,
+    double? documentLatencyMs,
+    bool clearDocumentLatencyMs = false,
+    double? selfieLatencyMs,
+    bool clearSelfieLatencyMs = false,
+    String? documentPortraitPath,
+    bool clearDocumentPortraitPath = false,
+    String? error,
+    bool clearError = false,
+  }) {
+    return MobileFaceMatchDebug(
+      attempted: attempted ?? this.attempted,
+      available: available ?? this.available,
+      score: clearScore ? null : (score ?? this.score),
+      threshold: clearThreshold ? null : (threshold ?? this.threshold),
+      documentLatencyMs: clearDocumentLatencyMs
+          ? null
+          : (documentLatencyMs ?? this.documentLatencyMs),
+      selfieLatencyMs: clearSelfieLatencyMs
+          ? null
+          : (selfieLatencyMs ?? this.selfieLatencyMs),
+      documentPortraitPath: clearDocumentPortraitPath
+          ? null
+          : (documentPortraitPath ?? this.documentPortraitPath),
+      error: clearError ? null : (error ?? this.error),
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'attempted': attempted,
+      'available': available,
+      'score': score,
+      'threshold': threshold,
+      'document_latency_ms': documentLatencyMs,
+      'selfie_latency_ms': selfieLatencyMs,
+      'document_portrait_path': documentPortraitPath,
+      'error': error,
+    };
+  }
+}
+
 class ThesisDebugReport {
   const ThesisDebugReport({
     required this.runId,
@@ -18,6 +194,7 @@ class ThesisDebugReport {
     this.documentError,
     this.documentPath,
     this.normalizedDocumentPath,
+    this.documentQualityDebugSample = const DocumentQualityDebugSample(),
     this.selfieFaceDetected = false,
     this.selfieStatusMessage,
     this.selfieError,
@@ -25,21 +202,8 @@ class ThesisDebugReport {
     this.selfieRedoCount = 0,
     this.selfieTimeoutCount = 0,
     this.completedChallenges = const [],
-    this.mobileLivenessShadowEnabled = false,
-    this.mobileLivenessShadowAttempted = false,
-    this.mobileLivenessShadowAvailable = false,
-    this.mobileLivenessShadowScore,
-    this.mobileLivenessShadowThreshold,
-    this.mobileLivenessShadowLatencyMs,
-    this.mobileLivenessShadowError,
-    this.mobileFaceMatchAttempted = false,
-    this.mobileFaceMatchAvailable = false,
-    this.mobileFaceMatchScore,
-    this.mobileFaceMatchThreshold,
-    this.mobileFaceMatchDocumentLatencyMs,
-    this.mobileFaceMatchSelfieLatencyMs,
-    this.mobileFaceMatchPortraitPath,
-    this.mobileFaceMatchError,
+    this.mobileLivenessShadow = const MobileLivenessShadowDebug(),
+    this.mobileFaceMatch = const MobileFaceMatchDebug(),
     this.processingStartedAt,
     this.uploadProgressPeak = 0,
     this.uploadDurationMs,
@@ -68,6 +232,7 @@ class ThesisDebugReport {
   final String? documentError;
   final String? documentPath;
   final String? normalizedDocumentPath;
+  final DocumentQualityDebugSample documentQualityDebugSample;
   final bool selfieFaceDetected;
   final String? selfieStatusMessage;
   final String? selfieError;
@@ -75,21 +240,8 @@ class ThesisDebugReport {
   final int selfieRedoCount;
   final int selfieTimeoutCount;
   final List<String> completedChallenges;
-  final bool mobileLivenessShadowEnabled;
-  final bool mobileLivenessShadowAttempted;
-  final bool mobileLivenessShadowAvailable;
-  final double? mobileLivenessShadowScore;
-  final double? mobileLivenessShadowThreshold;
-  final double? mobileLivenessShadowLatencyMs;
-  final String? mobileLivenessShadowError;
-  final bool mobileFaceMatchAttempted;
-  final bool mobileFaceMatchAvailable;
-  final double? mobileFaceMatchScore;
-  final double? mobileFaceMatchThreshold;
-  final double? mobileFaceMatchDocumentLatencyMs;
-  final double? mobileFaceMatchSelfieLatencyMs;
-  final String? mobileFaceMatchPortraitPath;
-  final String? mobileFaceMatchError;
+  final MobileLivenessShadowDebug mobileLivenessShadow;
+  final MobileFaceMatchDebug mobileFaceMatch;
   final DateTime? processingStartedAt;
   final double uploadProgressPeak;
   final int? uploadDurationMs;
@@ -107,6 +259,34 @@ class ThesisDebugReport {
       startedAt: DateTime.now(),
     );
   }
+
+  String? get documentQualityDebugSampleDirectoryPath =>
+      documentQualityDebugSample.directoryPath;
+  String? get documentQualityDebugFullFramePath =>
+      documentQualityDebugSample.fullFramePath;
+  String? get documentQualityDebugModelInputPath =>
+      documentQualityDebugSample.modelInputPath;
+  String? get documentQualityDebugMetadataPath =>
+      documentQualityDebugSample.metadataPath;
+
+  bool get mobileLivenessShadowEnabled => mobileLivenessShadow.enabled;
+  bool get mobileLivenessShadowAttempted => mobileLivenessShadow.attempted;
+  bool get mobileLivenessShadowAvailable => mobileLivenessShadow.available;
+  double? get mobileLivenessShadowScore => mobileLivenessShadow.score;
+  double? get mobileLivenessShadowThreshold => mobileLivenessShadow.threshold;
+  double? get mobileLivenessShadowLatencyMs => mobileLivenessShadow.latencyMs;
+  String? get mobileLivenessShadowError => mobileLivenessShadow.error;
+
+  bool get mobileFaceMatchAttempted => mobileFaceMatch.attempted;
+  bool get mobileFaceMatchAvailable => mobileFaceMatch.available;
+  double? get mobileFaceMatchScore => mobileFaceMatch.score;
+  double? get mobileFaceMatchThreshold => mobileFaceMatch.threshold;
+  double? get mobileFaceMatchDocumentLatencyMs =>
+      mobileFaceMatch.documentLatencyMs;
+  double? get mobileFaceMatchSelfieLatencyMs => mobileFaceMatch.selfieLatencyMs;
+  String? get mobileFaceMatchPortraitPath =>
+      mobileFaceMatch.documentPortraitPath;
+  String? get mobileFaceMatchError => mobileFaceMatch.error;
 
   ThesisDebugReport copyWith({
     String? runId,
@@ -134,6 +314,8 @@ class ThesisDebugReport {
     bool clearDocumentPath = false,
     String? normalizedDocumentPath,
     bool clearNormalizedDocumentPath = false,
+    DocumentQualityDebugSample? documentQualityDebugSample,
+    bool clearDocumentQualityDebugSample = false,
     bool? selfieFaceDetected,
     String? selfieStatusMessage,
     bool clearSelfieStatusMessage = false,
@@ -144,31 +326,8 @@ class ThesisDebugReport {
     int? selfieRedoCount,
     int? selfieTimeoutCount,
     List<String>? completedChallenges,
-    bool? mobileLivenessShadowEnabled,
-    bool? mobileLivenessShadowAttempted,
-    bool? mobileLivenessShadowAvailable,
-    double? mobileLivenessShadowScore,
-    bool clearMobileLivenessShadowScore = false,
-    double? mobileLivenessShadowThreshold,
-    bool clearMobileLivenessShadowThreshold = false,
-    double? mobileLivenessShadowLatencyMs,
-    bool clearMobileLivenessShadowLatencyMs = false,
-    String? mobileLivenessShadowError,
-    bool clearMobileLivenessShadowError = false,
-    bool? mobileFaceMatchAttempted,
-    bool? mobileFaceMatchAvailable,
-    double? mobileFaceMatchScore,
-    bool clearMobileFaceMatchScore = false,
-    double? mobileFaceMatchThreshold,
-    bool clearMobileFaceMatchThreshold = false,
-    double? mobileFaceMatchDocumentLatencyMs,
-    bool clearMobileFaceMatchDocumentLatencyMs = false,
-    double? mobileFaceMatchSelfieLatencyMs,
-    bool clearMobileFaceMatchSelfieLatencyMs = false,
-    String? mobileFaceMatchPortraitPath,
-    bool clearMobileFaceMatchPortraitPath = false,
-    String? mobileFaceMatchError,
-    bool clearMobileFaceMatchError = false,
+    MobileLivenessShadowDebug? mobileLivenessShadow,
+    MobileFaceMatchDebug? mobileFaceMatch,
     DateTime? processingStartedAt,
     bool clearProcessingStartedAt = false,
     double? uploadProgressPeak,
@@ -223,6 +382,9 @@ class ThesisDebugReport {
       normalizedDocumentPath: clearNormalizedDocumentPath
           ? null
           : (normalizedDocumentPath ?? this.normalizedDocumentPath),
+      documentQualityDebugSample: clearDocumentQualityDebugSample
+          ? const DocumentQualityDebugSample()
+          : (documentQualityDebugSample ?? this.documentQualityDebugSample),
       selfieFaceDetected: selfieFaceDetected ?? this.selfieFaceDetected,
       selfieStatusMessage: clearSelfieStatusMessage
           ? null
@@ -232,50 +394,8 @@ class ThesisDebugReport {
       selfieRedoCount: selfieRedoCount ?? this.selfieRedoCount,
       selfieTimeoutCount: selfieTimeoutCount ?? this.selfieTimeoutCount,
       completedChallenges: completedChallenges ?? this.completedChallenges,
-      mobileLivenessShadowEnabled:
-          mobileLivenessShadowEnabled ?? this.mobileLivenessShadowEnabled,
-      mobileLivenessShadowAttempted:
-          mobileLivenessShadowAttempted ?? this.mobileLivenessShadowAttempted,
-      mobileLivenessShadowAvailable:
-          mobileLivenessShadowAvailable ?? this.mobileLivenessShadowAvailable,
-      mobileLivenessShadowScore: clearMobileLivenessShadowScore
-          ? null
-          : (mobileLivenessShadowScore ?? this.mobileLivenessShadowScore),
-      mobileLivenessShadowThreshold: clearMobileLivenessShadowThreshold
-          ? null
-          : (mobileLivenessShadowThreshold ??
-              this.mobileLivenessShadowThreshold),
-      mobileLivenessShadowLatencyMs: clearMobileLivenessShadowLatencyMs
-          ? null
-          : (mobileLivenessShadowLatencyMs ??
-              this.mobileLivenessShadowLatencyMs),
-      mobileLivenessShadowError: clearMobileLivenessShadowError
-          ? null
-          : (mobileLivenessShadowError ?? this.mobileLivenessShadowError),
-      mobileFaceMatchAttempted:
-          mobileFaceMatchAttempted ?? this.mobileFaceMatchAttempted,
-      mobileFaceMatchAvailable:
-          mobileFaceMatchAvailable ?? this.mobileFaceMatchAvailable,
-      mobileFaceMatchScore: clearMobileFaceMatchScore
-          ? null
-          : (mobileFaceMatchScore ?? this.mobileFaceMatchScore),
-      mobileFaceMatchThreshold: clearMobileFaceMatchThreshold
-          ? null
-          : (mobileFaceMatchThreshold ?? this.mobileFaceMatchThreshold),
-      mobileFaceMatchDocumentLatencyMs: clearMobileFaceMatchDocumentLatencyMs
-          ? null
-          : (mobileFaceMatchDocumentLatencyMs ??
-              this.mobileFaceMatchDocumentLatencyMs),
-      mobileFaceMatchSelfieLatencyMs: clearMobileFaceMatchSelfieLatencyMs
-          ? null
-          : (mobileFaceMatchSelfieLatencyMs ??
-              this.mobileFaceMatchSelfieLatencyMs),
-      mobileFaceMatchPortraitPath: clearMobileFaceMatchPortraitPath
-          ? null
-          : (mobileFaceMatchPortraitPath ?? this.mobileFaceMatchPortraitPath),
-      mobileFaceMatchError: clearMobileFaceMatchError
-          ? null
-          : (mobileFaceMatchError ?? this.mobileFaceMatchError),
+      mobileLivenessShadow: mobileLivenessShadow ?? this.mobileLivenessShadow,
+      mobileFaceMatch: mobileFaceMatch ?? this.mobileFaceMatch,
       processingStartedAt: clearProcessingStartedAt
           ? null
           : (processingStartedAt ?? this.processingStartedAt),
@@ -324,6 +444,7 @@ class ThesisDebugReport {
           'error': documentError,
           'source_path': documentPath,
           'normalized_path': normalizedDocumentPath,
+          'quality_debug_sample': documentQualityDebugSample.toJson(),
         },
         'selfie_liveness': {
           'config': selfieConfig,
@@ -334,25 +455,8 @@ class ThesisDebugReport {
           'redo_count': selfieRedoCount,
           'timeout_count': selfieTimeoutCount,
           'completed_challenges': completedChallenges,
-          'mobile_shadow': {
-            'enabled': mobileLivenessShadowEnabled,
-            'attempted': mobileLivenessShadowAttempted,
-            'available': mobileLivenessShadowAvailable,
-            'score': mobileLivenessShadowScore,
-            'threshold': mobileLivenessShadowThreshold,
-            'latency_ms': mobileLivenessShadowLatencyMs,
-            'error': mobileLivenessShadowError,
-          },
-          'mobile_face_match': {
-            'attempted': mobileFaceMatchAttempted,
-            'available': mobileFaceMatchAvailable,
-            'score': mobileFaceMatchScore,
-            'threshold': mobileFaceMatchThreshold,
-            'document_latency_ms': mobileFaceMatchDocumentLatencyMs,
-            'selfie_latency_ms': mobileFaceMatchSelfieLatencyMs,
-            'document_portrait_path': mobileFaceMatchPortraitPath,
-            'error': mobileFaceMatchError,
-          },
+          'mobile_shadow': mobileLivenessShadow.toJson(),
+          'mobile_face_match': mobileFaceMatch.toJson(),
         },
       },
       'processing': {
