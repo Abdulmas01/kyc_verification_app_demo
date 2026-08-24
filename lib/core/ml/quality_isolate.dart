@@ -13,7 +13,8 @@ import 'model_contract_types.dart';
 
 class QualityDebugArtifacts {
   const QualityDebugArtifacts({
-    required this.fullFrameJpeg,
+    required this.rawFrameJpeg,
+    required this.guideCropJpeg,
     required this.modelInputJpeg,
     required this.frameWidth,
     required this.frameHeight,
@@ -25,7 +26,8 @@ class QualityDebugArtifacts {
     required this.cropHeight,
   });
 
-  final Uint8List fullFrameJpeg;
+  final Uint8List rawFrameJpeg;
+  final Uint8List guideCropJpeg;
   final Uint8List modelInputJpeg;
   final int frameWidth;
   final int frameHeight;
@@ -191,14 +193,17 @@ class QualityIsolate {
 
   QualityDebugArtifacts? _readDebugArtifacts(Map? debug) {
     if (debug == null) return null;
-    final fullFrame = debug['fullFrameJpg'];
+    final rawFrame = debug['rawFrameJpg'];
+    final guideCrop = debug['guideCropJpg'];
     final modelInput = debug['modelInputJpg'];
-    if (fullFrame is! TransferableTypedData ||
+    if (rawFrame is! TransferableTypedData ||
+        guideCrop is! TransferableTypedData ||
         modelInput is! TransferableTypedData) {
       return null;
     }
     return QualityDebugArtifacts(
-      fullFrameJpeg: fullFrame.materialize().asUint8List(),
+      rawFrameJpeg: rawFrame.materialize().asUint8List(),
+      guideCropJpeg: guideCrop.materialize().asUint8List(),
       modelInputJpeg: modelInput.materialize().asUint8List(),
       frameWidth: debug['frameWidth'] as int? ?? 0,
       frameHeight: debug['frameHeight'] as int? ?? 0,
@@ -423,8 +428,11 @@ Future<void> _entry(_IsolateConfig config) async {
         'probs': probs,
         if (includeDebug)
           'debug': {
-            'fullFrameJpg': TransferableTypedData.fromList([
+            'rawFrameJpg': TransferableTypedData.fromList([
               Uint8List.fromList(img.encodeJpg(image, quality: 90)),
+            ]),
+            'guideCropJpg': TransferableTypedData.fromList([
+              Uint8List.fromList(img.encodeJpg(cropped.image, quality: 90)),
             ]),
             'modelInputJpg': TransferableTypedData.fromList([
               Uint8List.fromList(img.encodeJpg(resized, quality: 90)),

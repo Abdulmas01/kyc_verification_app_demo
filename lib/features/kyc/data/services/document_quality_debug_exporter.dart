@@ -44,11 +44,13 @@ class DocumentQualityDebugExporter {
     );
     await exportDirectory.create(recursive: true);
 
-    final fullFramePath = '${exportDirectory.path}/full_frame.jpg';
+    final fullFramePath = '${exportDirectory.path}/guide_crop_frame.jpg';
+    final rawFramePath = '${exportDirectory.path}/raw_camera_frame.jpg';
     final modelInputPath = '${exportDirectory.path}/model_input_224.jpg';
     final metadataPath = '${exportDirectory.path}/metadata.json';
 
-    await File(fullFramePath).writeAsBytes(debugArtifacts.fullFrameJpeg);
+    await File(fullFramePath).writeAsBytes(debugArtifacts.guideCropJpeg);
+    await File(rawFramePath).writeAsBytes(debugArtifacts.rawFrameJpeg);
     await File(modelInputPath).writeAsBytes(debugArtifacts.modelInputJpeg);
 
     final metadata = {
@@ -84,7 +86,8 @@ class DocumentQualityDebugExporter {
       },
       'document_config': documentConfig,
       'files': {
-        'full_frame': fullFramePath,
+        'guide_crop_frame': fullFramePath,
+        'raw_camera_frame': rawFramePath,
         'model_input_224': modelInputPath,
       },
     };
@@ -96,6 +99,7 @@ class DocumentQualityDebugExporter {
     final localFilePaths = [
       metadataPath,
       fullFramePath,
+      rawFramePath,
       modelInputPath,
     ];
     final downloadExport = await DebugExportChannel.exportFilesToDownloads(

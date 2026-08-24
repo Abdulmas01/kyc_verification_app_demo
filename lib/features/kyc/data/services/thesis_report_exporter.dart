@@ -43,7 +43,7 @@ class ThesisReportExporter {
     String? copiedDocumentPath;
     String? copiedSelfiePath;
     String? copiedDocumentPortraitPath;
-    String? copiedDocumentQualityFullFramePath;
+    String? copiedDocumentQualityGuideCropPath;
     String? copiedDocumentQualityModelInputPath;
     String? copiedDocumentQualityMetadataPath;
     copiedDocumentPath = await _copyIfPresent(
@@ -58,9 +58,9 @@ class ThesisReportExporter {
       sourcePath: report.mobileFaceMatchPortraitPath,
       targetPath: '${capturesDirectory.path}/document_portrait.jpg',
     );
-    copiedDocumentQualityFullFramePath = await _copyIfPresent(
+    copiedDocumentQualityGuideCropPath = await _copyIfPresent(
       sourcePath: report.documentQualityDebugFullFramePath,
-      targetPath: '${capturesDirectory.path}/document_quality_full_frame.jpg',
+      targetPath: '${capturesDirectory.path}/document_quality_guide_crop.jpg',
     );
     copiedDocumentQualityModelInputPath = await _copyIfPresent(
       sourcePath: report.documentQualityDebugModelInputPath,
@@ -84,7 +84,7 @@ class ThesisReportExporter {
         'document': copiedDocumentPath,
         'selfie': copiedSelfiePath,
         'document_portrait': copiedDocumentPortraitPath,
-        'document_quality_full_frame': copiedDocumentQualityFullFramePath,
+        'document_quality_guide_crop': copiedDocumentQualityGuideCropPath,
         'document_quality_model_input': copiedDocumentQualityModelInputPath,
         'document_quality_metadata': copiedDocumentQualityMetadataPath,
       },
@@ -100,8 +100,8 @@ class ThesisReportExporter {
       if (copiedDocumentPath != null) copiedDocumentPath,
       if (copiedSelfiePath != null) copiedSelfiePath,
       if (copiedDocumentPortraitPath != null) copiedDocumentPortraitPath,
-      if (copiedDocumentQualityFullFramePath != null)
-        copiedDocumentQualityFullFramePath,
+      if (copiedDocumentQualityGuideCropPath != null)
+        copiedDocumentQualityGuideCropPath,
       if (copiedDocumentQualityModelInputPath != null)
         copiedDocumentQualityModelInputPath,
       if (copiedDocumentQualityMetadataPath != null)
@@ -242,7 +242,7 @@ class ThesisReportExporter {
       '- `supporting/captures/document.jpg`: ${supportingFiles['captures']['document'] ?? 'Not exported'}',
       '- `supporting/captures/selfie.jpg`: ${supportingFiles['captures']['selfie'] ?? 'Not exported'}',
       '- `supporting/captures/document_portrait.jpg`: ${supportingFiles['captures']['document_portrait'] ?? 'Not exported'}',
-      '- `supporting/captures/document_quality_full_frame.jpg`: ${supportingFiles['captures']['document_quality_full_frame'] ?? 'Not exported'}',
+      '- `supporting/captures/document_quality_guide_crop.jpg`: ${supportingFiles['captures']['document_quality_guide_crop'] ?? 'Not exported'}',
       '- `supporting/captures/document_quality_model_input_224.jpg`: ${supportingFiles['captures']['document_quality_model_input'] ?? 'Not exported'}',
       '- `supporting/captures/document_quality_metadata.json`: ${supportingFiles['captures']['document_quality_metadata'] ?? 'Not exported'}',
       '- `supporting/backend/result_payload.json`: ${supportingFiles['backend']['result_payload'] ?? 'Not exported'}',

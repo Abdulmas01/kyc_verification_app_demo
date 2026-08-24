@@ -44,7 +44,7 @@ class DocumentQualityDebugSample {
   Map<String, dynamic> toJson() {
     return {
       'directory_path': directoryPath,
-      'full_frame_path': fullFramePath,
+      'guide_crop_path': fullFramePath,
       'model_input_path': modelInputPath,
       'metadata_path': metadataPath,
     };
