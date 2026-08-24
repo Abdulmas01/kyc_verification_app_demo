@@ -76,6 +76,12 @@ class DocumentQualityDebugExporter {
         'width': debugArtifacts.modelWidth,
         'height': debugArtifacts.modelHeight,
       },
+      'guide_crop_rect': {
+        'left': debugArtifacts.cropLeft,
+        'top': debugArtifacts.cropTop,
+        'width': debugArtifacts.cropWidth,
+        'height': debugArtifacts.cropHeight,
+      },
       'document_config': documentConfig,
       'files': {
         'full_frame': fullFramePath,

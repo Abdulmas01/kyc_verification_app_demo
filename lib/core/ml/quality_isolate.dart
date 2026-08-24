@@ -7,6 +7,7 @@ import 'package:tflite_flutter/tflite_flutter.dart';
 
 import '../utils/logger.dart';
 import '../utils/app_assets.dart';
+import '../utils/image_utils.dart';
 import 'document_quality_contract.dart';
 import 'model_contract_types.dart';
 
@@ -18,6 +19,10 @@ class QualityDebugArtifacts {
     required this.frameHeight,
     required this.modelWidth,
     required this.modelHeight,
+    required this.cropLeft,
+    required this.cropTop,
+    required this.cropWidth,
+    required this.cropHeight,
   });
 
   final Uint8List fullFrameJpeg;
@@ -26,6 +31,10 @@ class QualityDebugArtifacts {
   final int frameHeight;
   final int modelWidth;
   final int modelHeight;
+  final int cropLeft;
+  final int cropTop;
+  final int cropWidth;
+  final int cropHeight;
 }
 
 class QualityInferenceResult {
@@ -195,6 +204,10 @@ class QualityIsolate {
       frameHeight: debug['frameHeight'] as int? ?? 0,
       modelWidth: debug['modelWidth'] as int? ?? 0,
       modelHeight: debug['modelHeight'] as int? ?? 0,
+      cropLeft: debug['cropLeft'] as int? ?? 0,
+      cropTop: debug['cropTop'] as int? ?? 0,
+      cropWidth: debug['cropWidth'] as int? ?? 0,
+      cropHeight: debug['cropHeight'] as int? ?? 0,
     );
   }
 }
@@ -351,8 +364,13 @@ Future<void> _entry(_IsolateConfig config) async {
         });
       }
       final image = _imageFromPayload(payload);
+      final guideRect = ImageUtils.centeredGuideCropRect(
+        imageWidth: image.width.toDouble(),
+        imageHeight: image.height.toDouble(),
+      );
+      final cropped = _cropImageToRect(image, guideRect);
       final resized = img.copyResize(
-        image,
+        cropped.image,
         width: inputWidth,
         height: inputHeight,
       );
@@ -379,6 +397,10 @@ Future<void> _entry(_IsolateConfig config) async {
             'frameHeight': image.height,
             'modelWidth': inputWidth,
             'modelHeight': inputHeight,
+            'cropLeft': cropped.left,
+            'cropTop': cropped.top,
+            'cropWidth': cropped.image.width,
+            'cropHeight': cropped.image.height,
           },
       });
     } catch (e) {
@@ -395,6 +417,37 @@ img.Image _imageFromPayload(_FramePayload payload) {
     return _bgraToImage(payload);
   }
   throw StateError('Unsupported image format: ${payload.format}');
+}
+
+_CroppedQualityImage _cropImageToRect(img.Image source, Rect cropRect) {
+  final left = cropRect.left.floor().clamp(0, source.width - 1);
+  final top = cropRect.top.floor().clamp(0, source.height - 1);
+  final right = cropRect.right.ceil().clamp(left + 1, source.width);
+  final bottom = cropRect.bottom.ceil().clamp(top + 1, source.height);
+
+  return _CroppedQualityImage(
+    image: img.copyCrop(
+      source,
+      x: left,
+      y: top,
+      width: right - left,
+      height: bottom - top,
+    ),
+    left: left,
+    top: top,
+  );
+}
+
+class _CroppedQualityImage {
+  const _CroppedQualityImage({
+    required this.image,
+    required this.left,
+    required this.top,
+  });
+
+  final img.Image image;
+  final int left;
+  final int top;
 }
 
 img.Image _yuvToImage(_FramePayload payload) {

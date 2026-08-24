@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:camera/camera.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_mlkit_object_detection/google_mlkit_object_detection.dart';
@@ -26,7 +27,6 @@ import '../../../domain/models/document_quality_guidance_request.dart';
 import '../../../domain/models/kyc_capture_bundle.dart';
 import '../../controllers/document_capture_runtime_controller.dart';
 import '../../controllers/document_capture_ui_notifier.dart';
-import '../../controllers/thesis_diagnostics_provider.dart';
 import '../../controllers/thesis_debug_report_notifier.dart';
 import '../../models/kyc_capture_config.dart';
 import '../../widgets/document_overlay_widget.dart';
@@ -84,6 +84,7 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
     _runtimeController = DocumentCaptureRuntimeController(
       initialFrameStride: widget.effectiveCaptureConfig.initialFrameStride,
     )..startSession();
+    _runtimeController.setPendingDebugSampleExport(kDebugMode);
     _objectDetector = ObjectDetector(
       options: ObjectDetectorOptions(
         mode: DetectionMode.single,
@@ -95,10 +96,6 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
     _initializeFuture = Future.value();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      final diagnostics = ref.read(thesisDiagnosticsProvider);
-      _runtimeController.setPendingDebugSampleExport(
-        diagnostics.captureDocumentQualitySamples,
-      );
       ref.read(thesisDebugReportProvider.notifier).startRun(
             documentConfig:
                 _documentConfigToJson(widget.effectiveCaptureConfig),
@@ -284,11 +281,10 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
     final stopwatch = Stopwatch()..start();
     try {
       if (!_shouldProcessLiveQualityFrames) return;
-      final diagnostics = ref.read(thesisDiagnosticsProvider);
       final inference = await _qualityIsolate?.predictPayload(
         payload,
-        includeDebugArtifacts: diagnostics.captureDocumentQualitySamples ||
-            _runtimeController.pendingDebugSampleExport,
+        includeDebugArtifacts:
+            kDebugMode || _runtimeController.pendingDebugSampleExport,
       );
       if (!mounted) return;
       if (!_shouldProcessLiveQualityFrames) return;
@@ -316,8 +312,7 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
         guidanceMessage: guidance.message,
         inferenceMs: stopwatch.elapsedMicroseconds / 1000,
       );
-      if (diagnostics.captureDocumentQualitySamples &&
-          inference.debugArtifacts != null) {
+      if (kDebugMode && inference.debugArtifacts != null) {
         _latestQualityDebugArtifacts = inference.debugArtifacts;
         _latestQualityResult = quality;
         _latestGuidanceQuality = guidance.guidanceQuality;
@@ -553,8 +548,7 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
   }
 
   Future<void> _exportAutomaticDocumentQualityDebugSample() async {
-    final diagnostics = ref.read(thesisDiagnosticsProvider);
-    if (!diagnostics.captureDocumentQualitySamples) return;
+    if (!kDebugMode) return;
     final debugArtifacts = _latestQualityDebugArtifacts;
     final quality = _latestQualityResult;
     final guidanceQuality = _latestGuidanceQuality;
