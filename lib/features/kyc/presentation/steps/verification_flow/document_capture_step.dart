@@ -846,6 +846,7 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
       'performance_log_every': config.performanceLogEvery,
       'guidance_stability_frames': config.guidanceStabilityFrames,
       'quality_mode': config.qualityMode.name,
+      'frame_profile': config.frameProfile.name,
       'guide_width_factor': config.guideWidthFactor,
       'guide_aspect_ratio': config.guideAspectRatio,
       'guide_max_height_factor': config.guideMaxHeightFactor,

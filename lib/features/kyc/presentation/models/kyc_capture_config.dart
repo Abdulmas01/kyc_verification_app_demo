@@ -2,6 +2,8 @@ import 'package:camera/camera.dart';
 
 enum DocumentQualityMode { guidanceOnly, qualityGate }
 
+enum DocumentFrameProfile { compact, standard, wide, custom }
+
 class DocumentCaptureConfig {
   final ResolutionPreset resolutionPreset;
   final ImageFormatGroup imageFormatGroup;
@@ -16,6 +18,7 @@ class DocumentCaptureConfig {
   final int performanceLogEvery;
   final int guidanceStabilityFrames;
   final DocumentQualityMode qualityMode;
+  final DocumentFrameProfile frameProfile;
   final double guideWidthFactor;
   final double guideAspectRatio;
   final double guideMaxHeightFactor;
@@ -35,11 +38,25 @@ class DocumentCaptureConfig {
     required this.performanceLogEvery,
     required this.guidanceStabilityFrames,
     required this.qualityMode,
-    this.guideWidthFactor = 0.86,
-    this.guideAspectRatio = 0.63,
-    this.guideMaxHeightFactor = 0.82,
-    this.qualityCropScale = 0.82,
-  });
+    this.frameProfile = DocumentFrameProfile.standard,
+    double? guideWidthFactor,
+    double? guideAspectRatio,
+    double? guideMaxHeightFactor,
+    double? qualityCropScale,
+  })  : guideWidthFactor = guideWidthFactor ??
+            (frameProfile == DocumentFrameProfile.compact
+                ? 0.78
+                : frameProfile == DocumentFrameProfile.wide
+                    ? 0.92
+                    : 0.86),
+        guideAspectRatio = guideAspectRatio ?? 0.63,
+        guideMaxHeightFactor = guideMaxHeightFactor ?? 0.82,
+        qualityCropScale = qualityCropScale ??
+            (frameProfile == DocumentFrameProfile.compact
+                ? 0.88
+                : frameProfile == DocumentFrameProfile.wide
+                    ? 0.78
+                    : 0.82);
 
   const DocumentCaptureConfig.balanced()
       : resolutionPreset = ResolutionPreset.medium,
@@ -55,6 +72,7 @@ class DocumentCaptureConfig {
         performanceLogEvery = 30,
         guidanceStabilityFrames = 3,
         qualityMode = DocumentQualityMode.guidanceOnly,
+        frameProfile = DocumentFrameProfile.standard,
         guideWidthFactor = 0.86,
         guideAspectRatio = 0.63,
         guideMaxHeightFactor = 0.82,
@@ -74,6 +92,7 @@ class DocumentCaptureConfig {
         performanceLogEvery = 40,
         guidanceStabilityFrames = 2,
         qualityMode = DocumentQualityMode.guidanceOnly,
+        frameProfile = DocumentFrameProfile.standard,
         guideWidthFactor = 0.86,
         guideAspectRatio = 0.63,
         guideMaxHeightFactor = 0.82,
@@ -93,6 +112,7 @@ class DocumentCaptureConfig {
         performanceLogEvery = 20,
         guidanceStabilityFrames = 4,
         qualityMode = DocumentQualityMode.guidanceOnly,
+        frameProfile = DocumentFrameProfile.standard,
         guideWidthFactor = 0.86,
         guideAspectRatio = 0.63,
         guideMaxHeightFactor = 0.82,
