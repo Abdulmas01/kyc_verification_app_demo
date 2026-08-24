@@ -22,6 +22,10 @@ class ThesisDebugReportNotifier extends Notifier<ThesisDebugReport> {
     state = state.copyWith(selfieConfig: selfieConfig);
   }
 
+  void recordDeviceSnapshot(Map<String, dynamic> snapshot) {
+    state = state.copyWith(deviceSnapshot: snapshot);
+  }
+
   void configureMobileLivenessShadow({required bool enabled}) {
     state = state.copyWith(
       mobileLivenessShadow: state.mobileLivenessShadow.copyWith(
@@ -194,16 +198,6 @@ class ThesisDebugReportNotifier extends Notifier<ThesisDebugReport> {
       clearTotalVerificationDurationMs: true,
       pollAttempts: 0,
       uploadProgressPeak: 0,
-      mobileFaceMatch: state.mobileFaceMatch.copyWith(
-        attempted: false,
-        available: false,
-        clearScore: true,
-        clearThreshold: true,
-        clearDocumentLatencyMs: true,
-        clearSelfieLatencyMs: true,
-        clearDocumentPortraitPath: true,
-        clearError: true,
-      ),
     );
   }
 

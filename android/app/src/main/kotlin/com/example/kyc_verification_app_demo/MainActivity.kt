@@ -1,5 +1,6 @@
 package com.example.kyc_verification_app_demo
 
+import android.app.ActivityManager
 import android.content.ContentValues
 import android.content.ClipData
 import android.content.Intent
@@ -95,6 +96,46 @@ class MainActivity : FlutterFragmentActivity() {
                         )
                     )
                     result.success(null)
+                }
+
+                else -> {
+                    result.notImplemented()
+                }
+            }
+        }
+
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            "kyc_device_diagnostics"
+        ).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "collectSnapshot" -> {
+                    try {
+                        val activityManager =
+                            getSystemService(ACTIVITY_SERVICE) as ActivityManager
+                        val memoryInfo = ActivityManager.MemoryInfo()
+                        activityManager.getMemoryInfo(memoryInfo)
+
+                        result.success(
+                            mapOf(
+                                "platform" to "android",
+                                "manufacturer" to Build.MANUFACTURER,
+                                "brand" to Build.BRAND,
+                                "model" to Build.MODEL,
+                                "device" to Build.DEVICE,
+                                "product" to Build.PRODUCT,
+                                "hardware" to Build.HARDWARE,
+                                "android_release" to Build.VERSION.RELEASE,
+                                "sdk_int" to Build.VERSION.SDK_INT,
+                                "supported_abis" to Build.SUPPORTED_ABIS.toList(),
+                                "total_ram_bytes" to memoryInfo.totalMem,
+                                "available_ram_bytes" to memoryInfo.availMem,
+                                "low_memory" to memoryInfo.lowMemory
+                            )
+                        )
+                    } catch (error: Exception) {
+                        result.error("device_snapshot_failed", error.message, null)
+                    }
                 }
 
                 else -> {

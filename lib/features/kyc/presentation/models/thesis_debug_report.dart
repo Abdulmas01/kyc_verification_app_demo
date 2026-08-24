@@ -180,6 +180,7 @@ class ThesisDebugReport {
   const ThesisDebugReport({
     required this.runId,
     required this.startedAt,
+    this.deviceSnapshot = const {},
     this.documentConfig = const {},
     this.selfieConfig = const {},
     this.documentStatusMessage,
@@ -218,6 +219,7 @@ class ThesisDebugReport {
 
   final String runId;
   final DateTime startedAt;
+  final Map<String, dynamic> deviceSnapshot;
   final Map<String, dynamic> documentConfig;
   final Map<String, dynamic> selfieConfig;
   final String? documentStatusMessage;
@@ -291,6 +293,7 @@ class ThesisDebugReport {
   ThesisDebugReport copyWith({
     String? runId,
     DateTime? startedAt,
+    Map<String, dynamic>? deviceSnapshot,
     Map<String, dynamic>? documentConfig,
     Map<String, dynamic>? selfieConfig,
     String? documentStatusMessage,
@@ -350,6 +353,7 @@ class ThesisDebugReport {
     return ThesisDebugReport(
       runId: runId ?? this.runId,
       startedAt: startedAt ?? this.startedAt,
+      deviceSnapshot: deviceSnapshot ?? this.deviceSnapshot,
       documentConfig: documentConfig ?? this.documentConfig,
       selfieConfig: selfieConfig ?? this.selfieConfig,
       documentStatusMessage: clearDocumentStatusMessage
@@ -422,10 +426,13 @@ class ThesisDebugReport {
   Map<String, dynamic> toJson({
     String? exportDirectoryPath,
     Map<String, dynamic>? supportingFiles,
+    String? reportStage,
   }) {
     return {
       'run_id': runId,
       'started_at': startedAt.toIso8601String(),
+      'device': deviceSnapshot,
+      if (reportStage != null) 'report_stage': reportStage,
       if (exportedAt != null) 'exported_at': exportedAt!.toIso8601String(),
       if ((exportDirectoryPath ?? this.exportDirectoryPath) != null)
         'export_directory': exportDirectoryPath ?? this.exportDirectoryPath,

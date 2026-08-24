@@ -8,8 +8,11 @@ import 'package:path_provider/path_provider.dart';
 import '../../../../core/platform/debug_export_channel.dart';
 import '../../presentation/models/thesis_debug_report.dart';
 
+enum ThesisReportStage { preUploadLocalReview, finalBackendResult }
+
 class ThesisReportExportResult {
   const ThesisReportExportResult({
+    required this.stage,
     required this.directoryPath,
     required this.reportMarkdownPath,
     required this.reportJsonPath,
@@ -17,6 +20,7 @@ class ThesisReportExportResult {
     required this.summaryText,
   });
 
+  final ThesisReportStage stage;
   final String directoryPath;
   final String reportMarkdownPath;
   final String reportJsonPath;
@@ -25,10 +29,13 @@ class ThesisReportExportResult {
 }
 
 class ThesisReportExporter {
-  Future<ThesisReportExportResult> export(ThesisDebugReport report) async {
+  Future<ThesisReportExportResult> export(
+    ThesisDebugReport report, {
+    required ThesisReportStage stage,
+  }) async {
     final documentsDirectory = await getApplicationDocumentsDirectory();
     final localExportDirectory = Directory(
-      '${documentsDirectory.path}/kyc_thesis_reports/${report.runId}',
+      '${documentsDirectory.path}/kyc_thesis_reports/${report.runId}/${stage.name}',
     );
     final capturesDirectory = Directory(
       '${localExportDirectory.path}/supporting/captures',
@@ -111,6 +118,7 @@ class ThesisReportExporter {
 
     final downloadExport = await _exportToDownloadsIfSupported(
       runId: report.runId,
+      stage: stage,
       localFilePaths: shareableFilePaths,
     );
     final finalDirectoryPath = downloadExport?.directoryPath.isNotEmpty == true
@@ -118,10 +126,11 @@ class ThesisReportExporter {
         : localExportDirectory.path;
 
     final summaryText =
-        _buildSummary(report, finalDirectoryPath, supportingFiles);
+        _buildSummary(report, stage, finalDirectoryPath, supportingFiles);
     final jsonBody = report.toJson(
       exportDirectoryPath: finalDirectoryPath,
       supportingFiles: supportingFiles,
+      reportStage: stage.name,
     );
 
     await File(jsonPath).writeAsString(
@@ -136,6 +145,7 @@ class ThesisReportExporter {
     ];
 
     return ThesisReportExportResult(
+      stage: stage,
       directoryPath: finalDirectoryPath,
       reportMarkdownPath: markdownPath,
       reportJsonPath: jsonPath,
@@ -146,10 +156,11 @@ class ThesisReportExporter {
 
   Future<DebugExportChannelResult?> _exportToDownloadsIfSupported({
     required String runId,
+    required ThesisReportStage stage,
     required List<String> localFilePaths,
   }) async {
     return DebugExportChannel.exportFilesToDownloads(
-      directoryName: 'kyc_thesis_reports/$runId',
+      directoryName: 'kyc_thesis_reports/$runId/${stage.name}',
       sourcePaths: localFilePaths,
     );
   }
@@ -167,6 +178,7 @@ class ThesisReportExporter {
 
   String _buildSummary(
     ThesisDebugReport report,
+    ThesisReportStage stage,
     String exportDirectory,
     Map<String, dynamic> supportingFiles,
   ) {
@@ -177,8 +189,14 @@ class ThesisReportExporter {
       '',
       '## Run Metadata',
       '- Run ID: `${report.runId}`',
+      '- Report Stage: `${stage.name}`',
       '- Started At: ${formatter.format(report.startedAt)}',
       '- Export Directory: `$exportDirectory`',
+      '',
+      '## Device',
+      '```json',
+      const JsonEncoder.withIndent('  ').convert(report.deviceSnapshot),
+      '```',
       '',
       '## Document Capture',
       '- Status: ${report.documentStatusMessage ?? 'N/A'}',

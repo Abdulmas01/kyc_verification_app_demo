@@ -28,6 +28,7 @@ import '../../controllers/selfie_capture_runtime_controller.dart';
 import '../../controllers/selfie_capture_ui_notifier.dart';
 import '../../controllers/thesis_diagnostics_provider.dart';
 import '../../controllers/thesis_debug_report_notifier.dart';
+import '../../screens/pre_upload_summary_screen.dart';
 import '../../models/kyc_capture_config.dart';
 import '../../models/selfie_capture_ui_state.dart';
 import 'processing_step.dart';
@@ -501,13 +502,20 @@ class _SelfieCaptureStepState extends ConsumerState<SelfieCaptureStep>
       if (!mounted) return;
       HapticFeedback.heavyImpact();
       _cameraLifecycle.markRouteActive(false);
+      final diagnostics = ref.read(thesisDiagnosticsProvider);
       await Navigator.of(context).push(
         MaterialPageRoute(
-          builder: (_) => ProcessingStep(
-            captureBundle: widget.captureBundle.copyWith(
-              selfiePath: file.path,
-            ),
-          ),
+          builder: (_) => diagnostics.enabled
+              ? PreUploadSummaryScreen(
+                  captureBundle: widget.captureBundle.copyWith(
+                    selfiePath: file.path,
+                  ),
+                )
+              : ProcessingStep(
+                  captureBundle: widget.captureBundle.copyWith(
+                    selfiePath: file.path,
+                  ),
+                ),
         ),
       );
       if (!mounted) return;

@@ -6,8 +6,6 @@ import 'package:kyc_verification_app_demo/core/extension/context_extention.dart'
 import 'package:kyc_verification_app_demo/core/theme/app_loader.dart';
 import 'package:kyc_verification_app_demo/core/theme/app_spacing.dart';
 import 'package:kyc_verification_app_demo/core/widget/button_widget.dart';
-import 'package:kyc_verification_app_demo/features/kyc/data/services/face_embedding_match_service.dart';
-import 'package:kyc_verification_app_demo/features/kyc/domain/models/face_embedding_match_request.dart';
 
 import '../../screens/result_screen.dart';
 import '../../controllers/processing_ui_notifier.dart';
@@ -29,8 +27,6 @@ class ProcessingStep extends ConsumerStatefulWidget {
 }
 
 class _ProcessingStepState extends ConsumerState<ProcessingStep> {
-  final FaceEmbeddingMatchService _faceEmbeddingMatchService =
-      const FaceEmbeddingMatchService();
   ProviderSubscription<VerificationApiState>? _verificationListener;
 
   @override
@@ -78,46 +74,10 @@ class _ProcessingStepState extends ConsumerState<ProcessingStep> {
       return;
     }
 
-    await _runMobileFaceMatchDebug(
-      documentPath: documentPath,
-      selfiePath: selfiePath,
-    );
-
     await ref.read(verificationApiProvider.notifier).verify(
           documentImage: File(documentPath),
           selfieImage: File(selfiePath),
         );
-  }
-
-  Future<void> _runMobileFaceMatchDebug({
-    required String documentPath,
-    required String selfiePath,
-  }) async {
-    try {
-      final result = await _faceEmbeddingMatchService.run(
-        FaceEmbeddingMatchRequest(
-          documentPath: documentPath,
-          selfiePath: selfiePath,
-        ),
-      );
-
-      if (result == null) {
-        ref
-            .read(thesisDebugReportProvider.notifier)
-            .recordMobileFaceMatchUnavailable(
-              'Face embedding asset is missing or could not be loaded.',
-            );
-        return;
-      }
-
-      ref
-          .read(thesisDebugReportProvider.notifier)
-          .recordMobileFaceMatchSuccess(result);
-    } catch (error) {
-      ref
-          .read(thesisDebugReportProvider.notifier)
-          .recordMobileFaceMatchUnavailable(error.toString());
-    }
   }
 
   @override

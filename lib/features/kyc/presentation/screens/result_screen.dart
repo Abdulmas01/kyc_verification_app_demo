@@ -35,8 +35,8 @@ class _ResultScreenState extends ConsumerState<ResultScreen> {
     if (diagnostics.autoExportReports) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted || _didScheduleAutoExport) return;
-        final report = ref.read(thesisDebugReportProvider);
-        if (report.exportedAt != null) return;
+        final latestExport = ref.read(latestThesisReportExportProvider);
+        if (latestExport?.stage == ThesisReportStage.finalBackendResult) return;
         _didScheduleAutoExport = true;
         _exportReport();
       });
@@ -155,8 +155,10 @@ class _ResultScreenState extends ConsumerState<ResultScreen> {
 
     try {
       final report = ref.read(thesisDebugReportProvider);
-      final exportResult =
-          await ref.read(thesisReportExporterProvider).export(report);
+      final exportResult = await ref.read(thesisReportExporterProvider).export(
+            report,
+            stage: ThesisReportStage.finalBackendResult,
+          );
       ref.read(thesisDebugReportProvider.notifier).markExported(
             exportResult.directoryPath,
           );
