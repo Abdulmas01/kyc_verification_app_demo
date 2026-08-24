@@ -483,6 +483,7 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
         DocumentCaptureRequest(
           controller: _controller!,
           objectDetector: _objectDetector,
+          captureConfig: widget.effectiveCaptureConfig,
         ),
       );
       if (!mounted) return;
@@ -671,6 +672,7 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
                             _controller!,
                             child: DocumentOverlayWidget(
                               visible: !uiState.documentDetected,
+                              captureConfig: widget.effectiveCaptureConfig,
                             ),
                           ),
                         );
@@ -844,6 +846,10 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
       'performance_log_every': config.performanceLogEvery,
       'guidance_stability_frames': config.guidanceStabilityFrames,
       'quality_mode': config.qualityMode.name,
+      'guide_width_factor': config.guideWidthFactor,
+      'guide_aspect_ratio': config.guideAspectRatio,
+      'guide_max_height_factor': config.guideMaxHeightFactor,
+      'quality_crop_scale': config.qualityCropScale,
     };
   }
 
@@ -905,7 +911,18 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
       _runtimeController.finishFrameProcessing();
       return;
     }
-    unawaited(_processPayload(payload));
+    unawaited(
+      _processPayload(
+        augmentQualityPayloadWithGuideConfig(
+          payload,
+          guideWidthFactor: widget.effectiveCaptureConfig.guideWidthFactor,
+          guideAspectRatio: widget.effectiveCaptureConfig.guideAspectRatio,
+          guideMaxHeightFactor:
+              widget.effectiveCaptureConfig.guideMaxHeightFactor,
+          qualityCropScale: widget.effectiveCaptureConfig.qualityCropScale,
+        ),
+      ),
+    );
   }
 }
 

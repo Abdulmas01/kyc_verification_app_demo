@@ -311,6 +311,22 @@ class _FramePayload {
   }
 }
 
+Map<String, Object?> augmentQualityPayloadWithGuideConfig(
+  Map<String, Object?> payload, {
+  required double guideWidthFactor,
+  required double guideAspectRatio,
+  required double guideMaxHeightFactor,
+  required double qualityCropScale,
+}) {
+  return {
+    ...payload,
+    'guideWidthFactor': guideWidthFactor,
+    'guideAspectRatio': guideAspectRatio,
+    'guideMaxHeightFactor': guideMaxHeightFactor,
+    'qualityCropScale': qualityCropScale,
+  };
+}
+
 Future<void> _entry(_IsolateConfig config) async {
   BackgroundIsolateBinaryMessenger.ensureInitialized(config.rootToken);
   final receivePort = ReceivePort();
@@ -339,6 +355,18 @@ Future<void> _entry(_IsolateConfig config) async {
 
     try {
       final payload = _FramePayload.fromMap(payloadMap);
+      final guideWidthFactor =
+          (payloadMap['guideWidthFactor'] as num?)?.toDouble() ??
+              ImageUtils.documentGuideWidthFactor;
+      final guideAspectRatio =
+          (payloadMap['guideAspectRatio'] as num?)?.toDouble() ??
+              ImageUtils.documentGuideAspectRatio;
+      final guideMaxHeightFactor =
+          (payloadMap['guideMaxHeightFactor'] as num?)?.toDouble() ??
+              ImageUtils.documentGuideMaxHeightFactor;
+      final qualityCropScale =
+          (payloadMap['qualityCropScale'] as num?)?.toDouble() ??
+              ImageUtils.documentQualityCropScale;
       if (!metaSent) {
         metaSent = true;
         config.sendPort.send({
@@ -360,6 +388,10 @@ Future<void> _entry(_IsolateConfig config) async {
             'layout': contract.layout.name,
             'inputShape': inputShape,
             'outputShape': outputShape,
+            'guideWidthFactor': guideWidthFactor,
+            'guideAspectRatio': guideAspectRatio,
+            'guideMaxHeightFactor': guideMaxHeightFactor,
+            'qualityCropScale': qualityCropScale,
           },
         });
       }
@@ -367,7 +399,10 @@ Future<void> _entry(_IsolateConfig config) async {
       final guideRect = ImageUtils.centeredGuideCropRect(
         imageWidth: image.width.toDouble(),
         imageHeight: image.height.toDouble(),
-        scale: ImageUtils.documentQualityCropScale,
+        scale: qualityCropScale,
+        guideWidthFactor: guideWidthFactor,
+        guideAspectRatio: guideAspectRatio,
+        guideMaxHeightFactor: guideMaxHeightFactor,
       );
       final cropped = _cropImageToRect(image, guideRect);
       final resized = img.copyResize(

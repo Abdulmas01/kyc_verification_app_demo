@@ -21,6 +21,9 @@ class DocumentCaptureService {
       boundingBox: detectedObject?.boundingBox,
       fallbackToCenteredGuideCrop: true,
       lockCropToGuideFrame: true,
+      guideWidthFactor: request.captureConfig.guideWidthFactor,
+      guideAspectRatio: request.captureConfig.guideAspectRatio,
+      guideMaxHeightFactor: request.captureConfig.guideMaxHeightFactor,
     );
 
     return DocumentCaptureResult(

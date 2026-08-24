@@ -19,6 +19,9 @@ class ImageUtils {
     int outputHeight = 540,
     bool fallbackToCenteredGuideCrop = false,
     bool lockCropToGuideFrame = false,
+    double guideWidthFactor = documentGuideWidthFactor,
+    double guideAspectRatio = documentGuideAspectRatio,
+    double guideMaxHeightFactor = documentGuideMaxHeightFactor,
   }) async {
     final bytes = await File(inputPath).readAsBytes();
     final decoded = img.decodeImage(bytes);
@@ -31,6 +34,9 @@ class ImageUtils {
     final guideRect = centeredGuideCropRect(
       imageWidth: oriented.width.toDouble(),
       imageHeight: oriented.height.toDouble(),
+      guideWidthFactor: guideWidthFactor,
+      guideAspectRatio: guideAspectRatio,
+      guideMaxHeightFactor: guideMaxHeightFactor,
     );
 
     img.Image cropped = oriented;
@@ -90,13 +96,16 @@ class ImageUtils {
     required double imageWidth,
     required double imageHeight,
     double scale = 1.0,
+    double guideWidthFactor = documentGuideWidthFactor,
+    double guideAspectRatio = documentGuideAspectRatio,
+    double guideMaxHeightFactor = documentGuideMaxHeightFactor,
   }) {
-    var guideWidth = imageWidth * documentGuideWidthFactor;
-    var guideHeight = guideWidth * documentGuideAspectRatio;
+    var guideWidth = imageWidth * guideWidthFactor;
+    var guideHeight = guideWidth * guideAspectRatio;
 
-    if (guideHeight > imageHeight * documentGuideMaxHeightFactor) {
-      guideHeight = imageHeight * documentGuideMaxHeightFactor;
-      guideWidth = guideHeight / documentGuideAspectRatio;
+    if (guideHeight > imageHeight * guideMaxHeightFactor) {
+      guideHeight = imageHeight * guideMaxHeightFactor;
+      guideWidth = guideHeight / guideAspectRatio;
     }
 
     final scaledWidth = guideWidth * scale.clamp(0.1, 1.0);

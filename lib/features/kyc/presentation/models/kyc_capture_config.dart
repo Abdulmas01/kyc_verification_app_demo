@@ -16,6 +16,10 @@ class DocumentCaptureConfig {
   final int performanceLogEvery;
   final int guidanceStabilityFrames;
   final DocumentQualityMode qualityMode;
+  final double guideWidthFactor;
+  final double guideAspectRatio;
+  final double guideMaxHeightFactor;
+  final double qualityCropScale;
 
   const DocumentCaptureConfig({
     required this.resolutionPreset,
@@ -31,6 +35,10 @@ class DocumentCaptureConfig {
     required this.performanceLogEvery,
     required this.guidanceStabilityFrames,
     required this.qualityMode,
+    this.guideWidthFactor = 0.86,
+    this.guideAspectRatio = 0.63,
+    this.guideMaxHeightFactor = 0.82,
+    this.qualityCropScale = 0.82,
   });
 
   const DocumentCaptureConfig.balanced()
@@ -46,7 +54,11 @@ class DocumentCaptureConfig {
         autoCaptureEnabled = true,
         performanceLogEvery = 30,
         guidanceStabilityFrames = 3,
-        qualityMode = DocumentQualityMode.guidanceOnly;
+        qualityMode = DocumentQualityMode.guidanceOnly,
+        guideWidthFactor = 0.86,
+        guideAspectRatio = 0.63,
+        guideMaxHeightFactor = 0.82,
+        qualityCropScale = 0.82;
 
   const DocumentCaptureConfig.fast()
       : resolutionPreset = ResolutionPreset.low,
@@ -61,7 +73,11 @@ class DocumentCaptureConfig {
         autoCaptureEnabled = true,
         performanceLogEvery = 40,
         guidanceStabilityFrames = 2,
-        qualityMode = DocumentQualityMode.guidanceOnly;
+        qualityMode = DocumentQualityMode.guidanceOnly,
+        guideWidthFactor = 0.86,
+        guideAspectRatio = 0.63,
+        guideMaxHeightFactor = 0.82,
+        qualityCropScale = 0.82;
 
   const DocumentCaptureConfig.highQuality()
       : resolutionPreset = ResolutionPreset.high,
@@ -76,7 +92,11 @@ class DocumentCaptureConfig {
         autoCaptureEnabled = true,
         performanceLogEvery = 20,
         guidanceStabilityFrames = 4,
-        qualityMode = DocumentQualityMode.guidanceOnly;
+        qualityMode = DocumentQualityMode.guidanceOnly,
+        guideWidthFactor = 0.86,
+        guideAspectRatio = 0.63,
+        guideMaxHeightFactor = 0.82,
+        qualityCropScale = 0.82;
 }
 
 class SelfieLivenessConfig {

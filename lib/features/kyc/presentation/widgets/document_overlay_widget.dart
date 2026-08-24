@@ -1,14 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:kyc_verification_app_demo/core/theme/app_colors.dart';
-import 'package:kyc_verification_app_demo/core/utils/image_utils.dart';
+import 'package:kyc_verification_app_demo/features/kyc/presentation/models/kyc_capture_config.dart';
 
 class DocumentOverlayWidget extends StatelessWidget {
   const DocumentOverlayWidget({
     super.key,
     this.visible = true,
+    this.captureConfig = const DocumentCaptureConfig.balanced(),
   });
 
   final bool visible;
+  final DocumentCaptureConfig captureConfig;
 
   @override
   Widget build(BuildContext context) {
@@ -16,21 +18,27 @@ class DocumentOverlayWidget extends StatelessWidget {
       return const SizedBox.expand();
     }
     return CustomPaint(
-      painter: _DocumentOverlayPainter(),
+      painter: _DocumentOverlayPainter(captureConfig: captureConfig),
       child: const SizedBox.expand(),
     );
   }
 }
 
 class _DocumentOverlayPainter extends CustomPainter {
+  const _DocumentOverlayPainter({
+    required this.captureConfig,
+  });
+
+  final DocumentCaptureConfig captureConfig;
+
   @override
   void paint(Canvas canvas, Size size) {
     final rect = Rect.fromCenter(
       center: Offset(size.width / 2, size.height / 2),
-      width: size.width * ImageUtils.documentGuideWidthFactor,
+      width: size.width * captureConfig.guideWidthFactor,
       height: size.width *
-          ImageUtils.documentGuideWidthFactor *
-          ImageUtils.documentGuideAspectRatio,
+          captureConfig.guideWidthFactor *
+          captureConfig.guideAspectRatio,
     );
 
     final overlayPaint = Paint()..color = AppColors.overlayLight;
@@ -90,5 +98,7 @@ class _DocumentOverlayPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_) => false;
+  bool shouldRepaint(covariant _DocumentOverlayPainter oldDelegate) {
+    return oldDelegate.captureConfig != captureConfig;
+  }
 }
