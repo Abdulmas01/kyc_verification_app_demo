@@ -6,6 +6,10 @@ import 'package:image/image.dart' as img;
 import 'package:path_provider/path_provider.dart';
 
 class ImageUtils {
+  static const double documentGuideWidthFactor = 0.86;
+  static const double documentGuideAspectRatio = 0.63;
+  static const double documentGuideMaxHeightFactor = 0.82;
+
   static Future<File> normalizeDocumentImage({
     required String inputPath,
     Rect? boundingBox,
@@ -13,6 +17,7 @@ class ImageUtils {
     int outputWidth = 856,
     int outputHeight = 540,
     bool fallbackToCenteredGuideCrop = false,
+    bool lockCropToGuideFrame = false,
   }) async {
     final bytes = await File(inputPath).readAsBytes();
     final decoded = img.decodeImage(bytes);
@@ -22,6 +27,10 @@ class ImageUtils {
 
     // Normalize orientation if EXIF data exists.
     final oriented = img.bakeOrientation(decoded);
+    final guideRect = centeredGuideCropRect(
+      imageWidth: oriented.width.toDouble(),
+      imageHeight: oriented.height.toDouble(),
+    );
 
     img.Image cropped = oriented;
     Rect? cropRect = boundingBox;
@@ -34,10 +43,11 @@ class ImageUtils {
     }
 
     if (cropRect == null && fallbackToCenteredGuideCrop) {
-      cropRect = _centeredGuideCropRect(
-        imageWidth: oriented.width.toDouble(),
-        imageHeight: oriented.height.toDouble(),
-      );
+      cropRect = guideRect;
+    }
+
+    if (cropRect != null && lockCropToGuideFrame) {
+      cropRect = _clampRectToGuide(cropRect, guideRect) ?? guideRect;
     }
 
     if (cropRect != null) {
@@ -75,20 +85,33 @@ class ImageUtils {
     return outputFile;
   }
 
-  static Rect _centeredGuideCropRect({
+  static Rect centeredGuideCropRect({
     required double imageWidth,
     required double imageHeight,
   }) {
-    final guideWidth = imageWidth * 0.86;
-    var guideHeight = guideWidth * 0.63;
+    final guideWidth = imageWidth * documentGuideWidthFactor;
+    var guideHeight = guideWidth * documentGuideAspectRatio;
 
-    if (guideHeight > imageHeight * 0.82) {
-      guideHeight = imageHeight * 0.82;
+    if (guideHeight > imageHeight * documentGuideMaxHeightFactor) {
+      guideHeight = imageHeight * documentGuideMaxHeightFactor;
     }
 
     final left = (imageWidth - guideWidth) / 2;
     final top = (imageHeight - guideHeight) / 2;
 
     return Rect.fromLTWH(left, top, guideWidth, guideHeight);
+  }
+
+  static Rect? _clampRectToGuide(Rect cropRect, Rect guideRect) {
+    final left = max(cropRect.left, guideRect.left);
+    final top = max(cropRect.top, guideRect.top);
+    final right = min(cropRect.right, guideRect.right);
+    final bottom = min(cropRect.bottom, guideRect.bottom);
+
+    if (right <= left || bottom <= top) {
+      return null;
+    }
+
+    return Rect.fromLTRB(left, top, right, bottom);
   }
 }

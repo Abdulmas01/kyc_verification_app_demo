@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:kyc_verification_app_demo/core/theme/app_colors.dart';
+import 'package:kyc_verification_app_demo/core/utils/image_utils.dart';
 
 class DocumentOverlayWidget extends StatelessWidget {
   const DocumentOverlayWidget({
@@ -26,8 +27,10 @@ class _DocumentOverlayPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final rect = Rect.fromCenter(
       center: Offset(size.width / 2, size.height / 2),
-      width: size.width * 0.86,
-      height: size.width * 0.86 * 0.63,
+      width: size.width * ImageUtils.documentGuideWidthFactor,
+      height: size.width *
+          ImageUtils.documentGuideWidthFactor *
+          ImageUtils.documentGuideAspectRatio,
     );
 
     final overlayPaint = Paint()..color = AppColors.overlayLight;

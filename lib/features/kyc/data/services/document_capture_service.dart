@@ -20,6 +20,7 @@ class DocumentCaptureService {
       inputPath: file.path,
       boundingBox: detectedObject?.boundingBox,
       fallbackToCenteredGuideCrop: true,
+      lockCropToGuideFrame: true,
     );
 
     return DocumentCaptureResult(
