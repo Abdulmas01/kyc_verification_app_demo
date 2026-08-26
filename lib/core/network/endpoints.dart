@@ -1,8 +1,8 @@
 class Endpoints {
   Endpoints._();
 
-//   static const String baseUrl = "http://192.168.1.180:8080";
-  static const String baseUrl = "https://django-balewite-backend.onrender.com";
+  static const String baseUrl = "http://192.168.1.180:8080";
+  // static const String baseUrl = "https://django-balewite-backend.onrender.com";
   static const String apiVersion = "api/v1";
   static const String apiBaseUrl = "$baseUrl/$apiVersion";
 
@@ -30,5 +30,6 @@ class Endpoints {
   static const String verifyPath = "$apiBaseUrl/verify";
   static const String verifyStart = "$verifyPath/start/";
   static const String verifyUpload = "$verifyPath/upload/";
-  static String verifyResult(String sessionId) => "$verifyPath/$sessionId/";
+  static String verifyResult(String sessionToken) =>
+      "$verifyPath/$sessionToken/";
 }

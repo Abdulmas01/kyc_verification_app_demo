@@ -64,7 +64,7 @@ class KycRemoteDataSource implements KycRemoteDataSourceBase {
   @override
   Future<VerificationResult> fetchResult(FetchResultRequest request) async {
     final response = await _dioClient.get(
-      Endpoints.verifyResult(request.sessionId),
+      Endpoints.verifyResult(request.sessionToken),
       cancelToken: request.cancelToken?.dioToken,
     );
     if (response.data is Map<String, dynamic>) {

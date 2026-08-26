@@ -235,7 +235,7 @@ class _ResultScreenState extends ConsumerState<ResultScreen> {
 class _RiskScoreChip extends StatelessWidget {
   const _RiskScoreChip({required this.score});
 
-  final double score;
+  final double? score;
 
   @override
   Widget build(BuildContext context) {
@@ -250,7 +250,7 @@ class _RiskScoreChip extends StatelessWidget {
         border: Border.all(color: Theme.of(context).dividerColor),
       ),
       child: Text(
-        'Risk Score: ${score.toStringAsFixed(2)}',
+        'Risk Score: ${score == null ? 'N/A' : score!.toStringAsFixed(2)}',
         style: context.textTheme.bodySmall,
       ),
     );
@@ -282,6 +282,10 @@ class _DebugSignalsCard extends StatelessWidget {
             runSpacing: AppSpacing.s8,
             children: [
               _SignalChip(label: 'Session', value: result.sessionId),
+              _SignalChip(label: 'Status', value: result.status),
+              _SignalChip(
+                  label: 'Decision',
+                  value: result.toJson()['decision'].toString()),
               _SignalChip(
                   label: 'OCR', value: _formatDouble(result.ocrConfidence)),
               _SignalChip(
@@ -289,20 +293,14 @@ class _DebugSignalsCard extends StatelessWidget {
                 value: _formatDouble(result.fieldValidScore),
               ),
               _SignalChip(
-                label: 'Face Match',
-                value: _formatDouble(result.faceSimilarity),
+                label: 'Risk',
+                value: _formatDouble(result.riskScore),
               ),
               _SignalChip(
-                label: 'Face Area',
-                value: _formatDouble(result.faceAreaRatio),
-              ),
-              _SignalChip(
-                label: 'Liveness',
-                value: _formatDouble(result.livenessScore),
-              ),
-              _SignalChip(
-                label: 'Quality',
-                value: _formatDouble(result.qualityScore),
+                label: 'Reasons',
+                value: result.reasonCodes.isEmpty
+                    ? 'None'
+                    : result.reasonCodes.join(', '),
               ),
             ],
           ),

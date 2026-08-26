@@ -1,16 +1,13 @@
 class UploadResponse {
-  final String sessionId;
-  final int estimatedWaitMs;
+  final String status;
 
   const UploadResponse({
-    required this.sessionId,
-    required this.estimatedWaitMs,
+    required this.status,
   });
 
   factory UploadResponse.fromJson(Map<String, dynamic> json) {
     return UploadResponse(
-      sessionId: json['session_id'] ?? '',
-      estimatedWaitMs: json['estimated_wait_ms'] ?? 1500,
+      status: (json['status'] ?? '').toString(),
     );
   }
 }

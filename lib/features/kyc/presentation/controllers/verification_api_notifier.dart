@@ -53,14 +53,12 @@ class VerificationApiNotifier
     try {
       final session = await repo.startSession(
         StartSessionRequest(
-          appVersion: '1.0.0',
-          deviceOs: Platform.isIOS ? 'ios' : 'android',
           cancelToken: _cancelToken,
         ),
       );
 
       uploadStopwatch.start();
-      final upload = await repo.uploadVerification(
+      await repo.uploadVerification(
         UploadVerificationRequest(
           sessionToken: session.sessionToken,
           documentImage: documentImage,
@@ -82,7 +80,7 @@ class VerificationApiNotifier
           .recordUploadCompleted(uploadStopwatch.elapsedMilliseconds);
       ref
           .read(thesisDebugReportProvider.notifier)
-          .recordBackendSessionId(upload.sessionId);
+          .recordBackendSessionId(session.id);
 
       state = const VerificationApiState.polling();
 
@@ -97,7 +95,7 @@ class VerificationApiNotifier
         await Future.delayed(pollInterval);
         lastResult = await repo.fetchResult(
           FetchResultRequest(
-            sessionId: upload.sessionId,
+            sessionToken: session.sessionToken,
             cancelToken: _cancelToken,
           ),
         );

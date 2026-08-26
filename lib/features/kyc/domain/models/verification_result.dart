@@ -2,44 +2,56 @@ import '../enums/verification_decision.dart';
 
 class VerificationResult {
   final String sessionId;
+  final String sessionToken;
+  final String status;
   final VerificationDecision decision;
-  final double riskScore;
+  final double? riskScore;
   final List<String> reasonCodes;
-  final double? faceSimilarity;
-  final double? livenessScore;
   final double? ocrConfidence;
   final double? fieldValidScore;
-  final double? faceAreaRatio;
-  final double? qualityScore;
+  final String extractedIdNumber;
+  final String extractedFullName;
+  final String? extractedDateOfBirth;
+  final String? extractedExpiryDate;
+  final String failureCode;
+  final String failureMessage;
   final Map<String, dynamic> rawPayload;
 
   const VerificationResult({
     required this.sessionId,
+    required this.sessionToken,
+    required this.status,
     required this.decision,
     required this.riskScore,
     required this.reasonCodes,
-    this.faceSimilarity,
-    this.livenessScore,
     this.ocrConfidence,
     this.fieldValidScore,
-    this.faceAreaRatio,
-    this.qualityScore,
+    this.extractedIdNumber = '',
+    this.extractedFullName = '',
+    this.extractedDateOfBirth,
+    this.extractedExpiryDate,
+    this.failureCode = '',
+    this.failureMessage = '',
     this.rawPayload = const {},
   });
 
   factory VerificationResult.fromJson(Map<String, dynamic> json) {
     final decision = (json['decision'] ?? '').toString().toUpperCase();
     return VerificationResult(
-      sessionId: json['session_id'] ?? '',
+      sessionId: (json['id'] ?? '').toString(),
+      sessionToken: (json['session_token'] ?? '').toString(),
+      status: (json['status'] ?? '').toString(),
       decision: _parseDecision(decision),
-      riskScore: (json['risk_score'] ?? 0).toDouble(),
+      riskScore: _readDouble(json['risk_score']),
       reasonCodes: List<String>.from(json['reason_codes'] ?? []),
-      faceSimilarity: _readDouble(json['face_similarity']),
-      livenessScore: _readDouble(json['liveness_score']),
       ocrConfidence: _readDouble(json['ocr_confidence']),
       fieldValidScore: _readDouble(json['field_valid_score']),
-      faceAreaRatio: _readDouble(json['face_area_ratio']),
-      qualityScore: _readDouble(json['quality_score']),
+      extractedIdNumber: (json['extracted_id_number'] ?? '').toString(),
+      extractedFullName: (json['extracted_full_name'] ?? '').toString(),
+      extractedDateOfBirth: _readString(json['extracted_date_of_birth']),
+      extractedExpiryDate: _readString(json['extracted_expiry_date']),
+      failureCode: (json['failure_code'] ?? '').toString(),
+      failureMessage: (json['failure_message'] ?? '').toString(),
       rawPayload: Map<String, dynamic>.from(json),
     );
   }
@@ -47,6 +59,8 @@ class VerificationResult {
   factory VerificationResult.demo() {
     return const VerificationResult(
       sessionId: 'demo',
+      sessionToken: 'demo-token',
+      status: 'completed',
       decision: VerificationDecision.accept,
       riskScore: 0.08,
       reasonCodes: [],
@@ -58,16 +72,22 @@ class VerificationResult {
       return Map<String, dynamic>.from(rawPayload);
     }
     return {
-      'session_id': sessionId,
+      'id': sessionId,
+      'session_token': sessionToken,
+      'status': status,
       'decision': _decisionToApiValue(decision),
       'risk_score': riskScore,
       'reason_codes': reasonCodes,
-      if (faceSimilarity != null) 'face_similarity': faceSimilarity,
-      if (livenessScore != null) 'liveness_score': livenessScore,
       if (ocrConfidence != null) 'ocr_confidence': ocrConfidence,
       if (fieldValidScore != null) 'field_valid_score': fieldValidScore,
-      if (faceAreaRatio != null) 'face_area_ratio': faceAreaRatio,
-      if (qualityScore != null) 'quality_score': qualityScore,
+      'extracted_id_number': extractedIdNumber,
+      'extracted_full_name': extractedFullName,
+      if (extractedDateOfBirth != null)
+        'extracted_date_of_birth': extractedDateOfBirth,
+      if (extractedExpiryDate != null)
+        'extracted_expiry_date': extractedExpiryDate,
+      'failure_code': failureCode,
+      'failure_message': failureMessage,
     };
   }
 
@@ -88,6 +108,12 @@ class VerificationResult {
     if (value == null) return null;
     if (value is num) return value.toDouble();
     return double.tryParse(value.toString());
+  }
+
+  static String? _readString(Object? value) {
+    if (value == null) return null;
+    final stringValue = value.toString();
+    return stringValue.isEmpty ? null : stringValue;
   }
 
   static String _decisionToApiValue(VerificationDecision decision) {
