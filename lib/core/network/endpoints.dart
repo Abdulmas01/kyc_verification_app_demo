@@ -1,7 +1,7 @@
 class Endpoints {
   Endpoints._();
 
-  static const String baseUrl = "http://192.168.1.180:8080";
+  static const String baseUrl = "http://192.168.1.180:8000";
   // static const String baseUrl = "https://django-balewite-backend.onrender.com";
   static const String apiVersion = "api/v1";
   static const String apiBaseUrl = "$baseUrl/$apiVersion";

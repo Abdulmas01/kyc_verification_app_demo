@@ -48,3 +48,6 @@ app.*.map.json
 /assets/models/*.tflite
 /assets/models/*.onnx
 !/assets/models/.gitkeep
+
+# Local secrets
+.env

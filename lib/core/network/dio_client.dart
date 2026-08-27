@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:dio/dio.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:kyc_verification_app_demo/helpers/navigation_helpers.dart';
 import 'package:kyc_verification_app_demo/core/exception/network_exception.dart';
@@ -42,11 +43,17 @@ class DioClient {
   final Ref ref;
 
   DioClient({required this.ref}) {
+    final verificationApiKey = dotenv.env['KYC_VERIFICATION_API_KEY']?.trim();
     dio = Dio()
       ..options.baseUrl = Endpoints.baseUrl
       ..options.contentType = "application/json"
       ..options.headers.addEntries(
-            {'Accept': "application/json", 'X-Client-Version': '1.3'}.entries,
+            {
+              'Accept': "application/json",
+              'X-Client-Version': '1.3',
+              if (verificationApiKey != null && verificationApiKey.isNotEmpty)
+                'X-API-KEY': verificationApiKey,
+            }.entries,
           )
       ..options.connectTimeout = const Duration(milliseconds: 30000);
 
