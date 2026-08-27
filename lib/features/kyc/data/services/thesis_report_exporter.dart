@@ -189,6 +189,7 @@ class ThesisReportExporter {
       '',
       '## Run Metadata',
       '- Run ID: `${report.runId}`',
+      '- Subject Reference: `${report.subjectReference}`',
       '- Report Stage: `${stage.name}`',
       '- Started At: ${formatter.format(report.startedAt)}',
       '- Export Directory: `$exportDirectory`',

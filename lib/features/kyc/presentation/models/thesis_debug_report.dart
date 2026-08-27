@@ -179,6 +179,7 @@ class MobileFaceMatchDebug {
 class ThesisDebugReport {
   const ThesisDebugReport({
     required this.runId,
+    required this.subjectReference,
     required this.startedAt,
     this.deviceSnapshot = const {},
     this.documentConfig = const {},
@@ -218,6 +219,7 @@ class ThesisDebugReport {
   });
 
   final String runId;
+  final String subjectReference;
   final DateTime startedAt;
   final Map<String, dynamic> deviceSnapshot;
   final Map<String, dynamic> documentConfig;
@@ -256,8 +258,10 @@ class ThesisDebugReport {
   final DateTime? exportedAt;
 
   factory ThesisDebugReport.initial() {
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
     return ThesisDebugReport(
-      runId: 'kyc_${DateTime.now().millisecondsSinceEpoch}',
+      runId: 'kyc_$timestamp',
+      subjectReference: 'thesis-mobile-attempt-$timestamp',
       startedAt: DateTime.now(),
     );
   }
@@ -292,6 +296,7 @@ class ThesisDebugReport {
 
   ThesisDebugReport copyWith({
     String? runId,
+    String? subjectReference,
     DateTime? startedAt,
     Map<String, dynamic>? deviceSnapshot,
     Map<String, dynamic>? documentConfig,
@@ -352,6 +357,7 @@ class ThesisDebugReport {
   }) {
     return ThesisDebugReport(
       runId: runId ?? this.runId,
+      subjectReference: subjectReference ?? this.subjectReference,
       startedAt: startedAt ?? this.startedAt,
       deviceSnapshot: deviceSnapshot ?? this.deviceSnapshot,
       documentConfig: documentConfig ?? this.documentConfig,
@@ -430,6 +436,7 @@ class ThesisDebugReport {
   }) {
     return {
       'run_id': runId,
+      'subject_reference': subjectReference,
       'started_at': startedAt.toIso8601String(),
       'device': deviceSnapshot,
       if (reportStage != null) 'report_stage': reportStage,

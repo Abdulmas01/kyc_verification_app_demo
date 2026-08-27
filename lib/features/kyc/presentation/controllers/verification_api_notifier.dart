@@ -48,14 +48,19 @@ class VerificationApiNotifier
     _cancelToken = RequestCancelToken();
     state = const VerificationApiState.uploading(progress: 0);
     final repo = ref.read(kycRepositoryProvider);
-    ref.read(thesisDebugReportProvider.notifier).recordProcessingStarted();
+    final thesisReportNotifier = ref.read(thesisDebugReportProvider.notifier);
+    thesisReportNotifier.recordProcessingStarted();
+    final subjectReference =
+        ref.read(thesisDebugReportProvider).subjectReference;
 
     try {
       final session = await repo.startSession(
         StartSessionRequest(
+          subjectReference: subjectReference,
           cancelToken: _cancelToken,
         ),
       );
+      thesisReportNotifier.recordSubjectReference(session.subjectReference);
 
       uploadStopwatch.start();
       await repo.uploadVerification(
@@ -67,27 +72,23 @@ class VerificationApiNotifier
             if (total <= 0) return;
             final progress = sent / total;
             state = VerificationApiState.uploading(progress: progress);
-            ref
-                .read(thesisDebugReportProvider.notifier)
-                .recordUploadProgress(progress);
+            thesisReportNotifier.recordUploadProgress(progress);
           },
           cancelToken: _cancelToken,
         ),
       );
       uploadStopwatch.stop();
-      ref
-          .read(thesisDebugReportProvider.notifier)
-          .recordUploadCompleted(uploadStopwatch.elapsedMilliseconds);
-      ref
-          .read(thesisDebugReportProvider.notifier)
-          .recordBackendSessionId(session.id);
+      thesisReportNotifier.recordUploadCompleted(
+        uploadStopwatch.elapsedMilliseconds,
+      );
+      thesisReportNotifier.recordBackendSessionId(session.id);
 
       state = const VerificationApiState.polling();
 
       // Simple poll loop (max attempts)
       VerificationResult? lastResult;
       for (var i = 0; i < maxPollAttempts; i++) {
-        ref.read(thesisDebugReportProvider.notifier).recordPollAttempt(i + 1);
+        thesisReportNotifier.recordPollAttempt(i + 1);
         if (_cancelToken?.isCancelled ?? false) {
           state = const VerificationApiState.idle();
           return;
@@ -103,24 +104,24 @@ class VerificationApiNotifier
 
       totalStopwatch.stop();
       if (lastResult == null) {
-        ref
-            .read(thesisDebugReportProvider.notifier)
-            .recordApiError('Verification timed out before a final result.');
+        thesisReportNotifier.recordApiError(
+          'Verification timed out before a final result.',
+        );
         state = const VerificationApiState.timeout();
         return;
       }
 
-      ref.read(thesisDebugReportProvider.notifier).recordVerificationResult(
-            result: lastResult,
-            totalDurationMs: totalStopwatch.elapsedMilliseconds,
-          );
+      thesisReportNotifier.recordVerificationResult(
+        result: lastResult,
+        totalDurationMs: totalStopwatch.elapsedMilliseconds,
+      );
       state = VerificationApiState.data(lastResult);
     } catch (e, st) {
       if (_cancelToken?.isCancelled ?? false) {
         state = const VerificationApiState.idle();
         return;
       }
-      ref.read(thesisDebugReportProvider.notifier).recordApiError(e.toString());
+      thesisReportNotifier.recordApiError(e.toString());
       state = VerificationApiState.error(e, st);
     }
   }

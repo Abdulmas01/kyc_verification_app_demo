@@ -11,11 +11,17 @@ class ThesisDebugReportNotifier extends Notifier<ThesisDebugReport> {
   void startRun({
     required Map<String, dynamic> documentConfig,
   }) {
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
     state = ThesisDebugReport(
-      runId: 'kyc_${DateTime.now().millisecondsSinceEpoch}',
+      runId: 'kyc_$timestamp',
+      subjectReference: 'thesis-mobile-attempt-$timestamp',
       startedAt: DateTime.now(),
       documentConfig: documentConfig,
     );
+  }
+
+  void recordSubjectReference(String subjectReference) {
+    state = state.copyWith(subjectReference: subjectReference);
   }
 
   void attachSelfieConfig(Map<String, dynamic> selfieConfig) {
