@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:kyc_verification_app_demo/helpers/navigation_helpers.dart';
@@ -44,6 +45,13 @@ class DioClient {
 
   DioClient({required this.ref}) {
     final verificationApiKey = dotenv.env['KYC_VERIFICATION_API_KEY']?.trim();
+    if (kDebugMode &&
+        (verificationApiKey == null || verificationApiKey.isEmpty)) {
+      logPrint(
+        'KYC verification requests are missing `X-API-KEY` because '
+        '`KYC_VERIFICATION_API_KEY` was not found in `.env`.',
+      );
+    }
     dio = Dio()
       ..options.baseUrl = Endpoints.baseUrl
       ..options.contentType = "application/json"
