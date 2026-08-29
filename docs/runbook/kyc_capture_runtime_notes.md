@@ -258,6 +258,58 @@ extraction.
 Without this shared layer, document and selfie steps can slowly diverge and
 re-introduce the same classes of camera bugs separately.
 
+## 9. Live Quality Rotation And Auto-Capture Guard
+
+### Problem
+
+During end-to-end testing, the document quality debug export showed cases where:
+
+- the on-screen guide looked correct
+- the live quality crop sent to the model was sideways or incomplete
+- smoothed guidance still remained on `GOOD`
+- auto-capture could trigger from that stale `GOOD` state
+
+This made it possible to capture a bad frame even though the visible preview
+looked acceptable.
+
+### Root Cause
+
+Two separate behaviors were interacting:
+
+- the live quality pipeline was cropping the raw camera buffer before applying
+  rotation compensation
+- guidance smoothing could briefly keep the displayed state on `GOOD` after the
+  raw classifier had already moved to a negative label
+
+That meant the model input and the visible preview were not always in the same
+orientation space, and auto-capture was too trusting of the smoothed guidance
+state.
+
+### Fix
+
+The document quality path now:
+
+- rotates the live frame into the same upright orientation before guide-crop
+  and resize
+- includes rotation metadata in the isolate payload for debug visibility
+- requires the raw model output to still be genuinely `GOOD` before
+  auto-capture can arm
+
+Smoothed guidance still exists for user-facing stability, but it no longer has
+authority to trigger capture by itself.
+
+### Why it matters
+
+This reduces false-ready captures and makes the exported quality debug images
+more trustworthy when diagnosing:
+
+- crop mismatch
+- orientation mismatch
+- model generalization problems
+
+If a future run still fails after this fix, it is more likely to be a true
+model, OCR, or camera-sharpness limitation rather than a frontend gating bug.
+
 ## 9. PopScope and Route Exit Behavior
 
 ### Problem

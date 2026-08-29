@@ -322,6 +322,7 @@ Map<String, Object?> augmentQualityPayloadWithGuideConfig(
   required double guideAspectRatio,
   required double guideMaxHeightFactor,
   required double qualityCropScale,
+  int rotationDegrees = 0,
 }) {
   return {
     ...payload,
@@ -329,6 +330,7 @@ Map<String, Object?> augmentQualityPayloadWithGuideConfig(
     'guideAspectRatio': guideAspectRatio,
     'guideMaxHeightFactor': guideMaxHeightFactor,
     'qualityCropScale': qualityCropScale,
+    'rotationDegrees': rotationDegrees,
   };
 }
 
@@ -372,6 +374,8 @@ Future<void> _entry(_IsolateConfig config) async {
       final qualityCropScale =
           (payloadMap['qualityCropScale'] as num?)?.toDouble() ??
               ImageUtils.documentQualityCropScale;
+      final rotationDegrees =
+          (payloadMap['rotationDegrees'] as num?)?.toInt() ?? 0;
       if (!metaSent) {
         metaSent = true;
         config.sendPort.send({
@@ -397,10 +401,14 @@ Future<void> _entry(_IsolateConfig config) async {
             'guideAspectRatio': guideAspectRatio,
             'guideMaxHeightFactor': guideMaxHeightFactor,
             'qualityCropScale': qualityCropScale,
+            'rotationDegrees': rotationDegrees,
           },
         });
       }
-      final image = _imageFromPayload(payload);
+      final image = _applyRotation(
+        _imageFromPayload(payload),
+        rotationDegrees: rotationDegrees,
+      );
       final guideRect = ImageUtils.centeredGuideCropRect(
         imageWidth: image.width.toDouble(),
         imageHeight: image.height.toDouble(),
@@ -461,6 +469,15 @@ img.Image _imageFromPayload(_FramePayload payload) {
     return _bgraToImage(payload);
   }
   throw StateError('Unsupported image format: ${payload.format}');
+}
+
+img.Image _applyRotation(
+  img.Image image, {
+  required int rotationDegrees,
+}) {
+  final normalizedRotation = ((rotationDegrees % 360) + 360) % 360;
+  if (normalizedRotation == 0) return image;
+  return img.copyRotate(image, angle: normalizedRotation);
 }
 
 _CroppedQualityImage _cropImageToRect(img.Image source, Rect cropRect) {

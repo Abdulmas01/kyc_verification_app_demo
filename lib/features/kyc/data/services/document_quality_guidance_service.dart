@@ -69,9 +69,8 @@ class DocumentQualityGuidanceService {
     );
     final message = _messageForQuality(guidanceQuality);
     final allowsQualityAcceptance = !usesQualityGate || quality.isGood;
-    final autoCaptureReady = usesQualityGate
-        ? allowsQualityAcceptance
-        : guidanceQuality == DocumentQuality.good;
+    final autoCaptureReady =
+        guidanceQuality == DocumentQuality.good && quality.isGood;
     final rawChanged = quality.quality != _lastLoggedRawQuality;
     final guidanceChanged = guidanceQuality != _lastLoggedGuidanceQuality ||
         message != _lastGuidanceMessage;

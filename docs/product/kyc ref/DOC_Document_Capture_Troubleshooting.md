@@ -121,6 +121,34 @@ W/ImageReader_JNI: Unable to acquire a buffer item, very likely client tried to 
 
 ---
 
+### 7) Guide looks correct but exported quality crop is sideways or partial
+**Symptom**
+- The green guide on screen looks fine.
+- `document_quality_guide_crop.jpg` or `document_quality_model_input_224.jpg`
+  looks rotated, sideways, or only partly aligned with the document.
+- Guidance may appear overly optimistic for a bad crop.
+
+**Cause**
+- The live quality pipeline and the visible preview are not using the same
+  orientation space.
+- Guidance smoothing can also hold the previous label briefly.
+
+**Fix**
+- Rotate the live frame before guide cropping and resize in
+  `lib/core/ml/quality_isolate.dart`.
+- Pass the calculated rotation into the isolate from
+  `document_capture_step.dart`.
+- Keep auto-capture gated by raw `GOOD` quality, not smoothed guidance alone.
+
+**What to verify after the fix**
+- `document_quality_guide_crop.jpg` is upright.
+- `document_quality_model_input_224.jpg` is upright.
+- The document sits mostly inside the crop.
+- Auto-capture does not continue when raw quality has already dropped to
+  `DARK`, `GLARE`, `BLURRY`, or `NO_DOCUMENT`.
+
+---
+
 ## Verification Checklist (Before Release)
 
 - Meta log appears once.
@@ -128,6 +156,7 @@ W/ImageReader_JNI: Unable to acquire a buffer item, very likely client tried to 
 - No repeated `PAD` or TFLite errors.
 - Stream pauses when app is backgrounded, resumes on return.
 - Frame stride adapts to device performance.
+- Exported quality crop and model input are upright on the tested device.
 
 ---
 

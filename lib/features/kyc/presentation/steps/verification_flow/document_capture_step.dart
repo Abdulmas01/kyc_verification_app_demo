@@ -921,9 +921,37 @@ class _DocumentCaptureStepState extends ConsumerState<DocumentCaptureStep>
           guideMaxHeightFactor:
               widget.effectiveCaptureConfig.guideMaxHeightFactor,
           qualityCropScale: widget.effectiveCaptureConfig.qualityCropScale,
+          rotationDegrees: _liveQualityRotationDegrees(),
         ),
       ),
     );
+  }
+
+  int _liveQualityRotationDegrees() {
+    final controller = _controller;
+    if (controller == null) return 0;
+    final description = controller.description;
+
+    if (Platform.isIOS) {
+      return description.sensorOrientation;
+    }
+
+    const orientations = {
+      DeviceOrientation.portraitUp: 0,
+      DeviceOrientation.landscapeLeft: 90,
+      DeviceOrientation.portraitDown: 180,
+      DeviceOrientation.landscapeRight: 270,
+    };
+
+    final rotationCompensation =
+        orientations[controller.value.deviceOrientation];
+    if (rotationCompensation == null) return 0;
+
+    if (description.lensDirection == CameraLensDirection.front) {
+      return (description.sensorOrientation + rotationCompensation) % 360;
+    }
+
+    return (description.sensorOrientation - rotationCompensation + 360) % 360;
   }
 }
 
