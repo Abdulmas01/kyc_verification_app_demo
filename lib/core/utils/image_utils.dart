@@ -10,13 +10,14 @@ class ImageUtils {
   static const double documentGuideAspectRatio = 0.63;
   static const double documentGuideMaxHeightFactor = 0.82;
   static const double documentQualityCropScale = 0.82;
+  static const int documentUploadMaxDimension = 1600;
+  static const int documentUploadJpegQuality = 95;
 
   static Future<File> normalizeDocumentImage({
     required String inputPath,
     Rect? boundingBox,
     List<Offset>? corners,
-    int outputWidth = 856,
-    int outputHeight = 540,
+    int maxOutputDimension = documentUploadMaxDimension,
     bool fallbackToCenteredGuideCrop = false,
     bool lockCropToGuideFrame = false,
     double guideWidthFactor = documentGuideWidthFactor,
@@ -75,21 +76,53 @@ class ImageUtils {
       );
     }
 
-    // NOTE: This is a crop + resize normalization. If you have true corner
-    // points, plug in a perspective transform here.
-    final resized = img.copyResize(
-      cropped,
-      width: outputWidth,
-      height: outputHeight,
-      interpolation: img.Interpolation.linear,
+    // Keep the OCR upload independent from the 224x224 quality-model input.
+    // Downscale large captures without stretching or upscaling smaller crops.
+    final outputSize = calculateDocumentOutputSize(
+      width: cropped.width,
+      height: cropped.height,
+      maxDimension: maxOutputDimension,
     );
+    final normalized =
+        outputSize.width == cropped.width && outputSize.height == cropped.height
+            ? cropped
+            : img.copyResize(
+                cropped,
+                width: outputSize.width,
+                height: outputSize.height,
+                interpolation: img.Interpolation.cubic,
+              );
 
     final tempDir = await getTemporaryDirectory();
     final outputPath =
         '${tempDir.path}/normalized_doc_${DateTime.now().millisecondsSinceEpoch}.jpg';
     final outputFile = File(outputPath);
-    await outputFile.writeAsBytes(img.encodeJpg(resized, quality: 90));
+    await outputFile.writeAsBytes(
+      img.encodeJpg(normalized, quality: documentUploadJpegQuality),
+    );
     return outputFile;
+  }
+
+  static ({int width, int height}) calculateDocumentOutputSize({
+    required int width,
+    required int height,
+    int maxDimension = documentUploadMaxDimension,
+  }) {
+    if (width <= 0 || height <= 0 || maxDimension <= 0) {
+      throw ArgumentError(
+          'Image dimensions and maxDimension must be positive.');
+    }
+
+    final longestSide = max(width, height);
+    if (longestSide <= maxDimension) {
+      return (width: width, height: height);
+    }
+
+    final scale = maxDimension / longestSide;
+    return (
+      width: max(1, (width * scale).round()),
+      height: max(1, (height * scale).round()),
+    );
   }
 
   static Rect centeredGuideCropRect({
